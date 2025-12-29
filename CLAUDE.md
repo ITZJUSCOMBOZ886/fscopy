@@ -46,6 +46,7 @@ fscopy -f config.ini --exclude logs cache  # Exclude subcollections
 fscopy -f config.ini --merge  # Merge instead of overwrite
 fscopy -f config.ini --parallel 3  # Parallel transfers
 fscopy -f config.ini --clear  # Clear destination before transfer
+fscopy -f config.ini --delete-missing  # Sync mode: delete orphan docs
 
 # Local development:
 bun start -- -f config.ini              # Run locally
@@ -75,6 +76,7 @@ Single-file TypeScript CLI (`src/cli.ts`) with shebang `#!/usr/bin/env bun`.
 - `initializeFirebase()` - Creates two Firebase Admin apps (source/dest)
 - `clearCollection()` - Deletes all docs from destination (when --clear is used)
 - `transferCollection()` - Recursive function with retry handling
+- `deleteOrphanDocuments()` - Deletes docs not in source (when --delete-missing is used)
 - `getSubcollections()` - Discovers nested collections via `listCollections()`
 
 **Tests:**
@@ -104,3 +106,4 @@ INI format uses `[projects]` section for source/dest and `[transfer]` section fo
 | Merge mode     | `-m`               | `merge` ([options])        | `merge`                 | false    |
 | Parallel       | `-p`               | `parallel` ([options])     | `parallel`              | 1        |
 | Clear dest     | `--clear`          | `clear` ([options])        | `clear`                 | false    |
+| Delete missing | `--delete-missing` | `deleteMissing` ([options])| `deleteMissing`         | false    |

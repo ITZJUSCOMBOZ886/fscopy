@@ -34,6 +34,7 @@ interface Config {
     merge: boolean;
     parallel: number;
     clear: boolean;
+    deleteMissing: boolean;
 }
 
 interface Stats {
@@ -76,6 +77,7 @@ interface CliArgs {
     merge?: boolean;
     parallel?: number;
     clear?: boolean;
+    deleteMissing?: boolean;
 }
 
 // =============================================================================
@@ -177,6 +179,11 @@ const argv = yargs(hideBin(process.argv))
         description: 'Clear destination collections before transfer (DESTRUCTIVE)',
         default: false,
     })
+    .option('delete-missing', {
+        type: 'boolean',
+        description: 'Delete destination docs not present in source (sync mode)',
+        default: false,
+    })
     .example('$0 --init config.ini', 'Generate INI config template (default)')
     .example('$0 --init config.json', 'Generate JSON config template')
     .example('$0 -f config.ini', 'Run transfer with config file')
@@ -187,6 +194,7 @@ const argv = yargs(hideBin(process.argv))
     .example('$0 -f config.ini --merge', 'Merge instead of overwrite')
     .example('$0 -f config.ini --parallel 3', 'Transfer 3 collections in parallel')
     .example('$0 -f config.ini --clear', 'Clear destination before transfer')
+    .example('$0 -f config.ini --delete-missing', 'Sync mode: delete orphan docs in dest')
     .help()
     .parseSync() as CliArgs;
 
@@ -208,6 +216,7 @@ const defaults: Config = {
     merge: false,
     parallel: 1,
     clear: false,
+    deleteMissing: false,
 };
 
 const iniTemplate = `; fscopy configuration file
@@ -235,6 +244,8 @@ merge = false
 parallel = 1
 ; Clear destination collections before transfer (DESTRUCTIVE)
 clear = false
+; Delete destination docs not present in source (sync mode)
+deleteMissing = false
 `;
 
 const jsonTemplate = {
@@ -250,6 +261,7 @@ const jsonTemplate = {
     merge: false,
     parallel: 1,
     clear: false,
+    deleteMissing: false,
 };
 
 // =============================================================================
@@ -442,6 +454,7 @@ function parseIniConfig(content: string): Partial<Config> {
             merge?: string | boolean;
             parallel?: string;
             clear?: string | boolean;
+            deleteMissing?: string | boolean;
         };
     };
 
@@ -471,6 +484,7 @@ function parseIniConfig(content: string): Partial<Config> {
         merge: parseBoolean(parsed.options?.merge),
         parallel: Number.parseInt(parsed.options?.parallel ?? '', 10) || 1,
         clear: parseBoolean(parsed.options?.clear),
+        deleteMissing: parseBoolean(parsed.options?.deleteMissing),
     };
 }
 
@@ -488,6 +502,7 @@ function parseJsonConfig(content: string): Partial<Config> {
         merge?: boolean;
         parallel?: number;
         clear?: boolean;
+        deleteMissing?: boolean;
     };
 
     return {
@@ -503,6 +518,7 @@ function parseJsonConfig(content: string): Partial<Config> {
         merge: config.merge,
         parallel: config.parallel,
         clear: config.clear,
+        deleteMissing: config.deleteMissing,
     };
 }
 
@@ -547,6 +563,7 @@ function mergeConfig(defaultConfig: Config, fileConfig: Partial<Config>, cliArgs
         merge: cliArgs.merge ?? fileConfig.merge ?? defaultConfig.merge,
         parallel: cliArgs.parallel ?? fileConfig.parallel ?? defaultConfig.parallel,
         clear: cliArgs.clear ?? fileConfig.clear ?? defaultConfig.clear,
+        deleteMissing: cliArgs.deleteMissing ?? fileConfig.deleteMissing ?? defaultConfig.deleteMissing,
     };
 }
 
@@ -632,6 +649,9 @@ function displayConfig(config: Config): void {
     }
     if (config.clear) {
         console.log(`  🗑️  Clear destination:    enabled (DESTRUCTIVE)`);
+    }
+    if (config.deleteMissing) {
+        console.log(`  🔄 Delete missing:       enabled (sync mode)`);
     }
 
     console.log('');
@@ -759,6 +779,86 @@ async function clearCollection(
         }
 
         logger.info(`Deleted ${batch.length} documents from ${collectionPath}`);
+    }
+
+    return deletedCount;
+}
+
+async function deleteOrphanDocuments(
+    sourceDb: Firestore,
+    destDb: Firestore,
+    collectionPath: string,
+    config: Config,
+    logger: Logger
+): Promise<number> {
+    let deletedCount = 0;
+
+    // Get all document IDs from source
+    const sourceSnapshot = await sourceDb.collection(collectionPath).get();
+    const sourceIds = new Set(sourceSnapshot.docs.map((doc) => doc.id));
+
+    // Get all document IDs from destination
+    const destSnapshot = await destDb.collection(collectionPath).get();
+
+    // Find orphan documents (in dest but not in source)
+    const orphanDocs = destSnapshot.docs.filter((doc) => !sourceIds.has(doc.id));
+
+    if (orphanDocs.length === 0) {
+        return 0;
+    }
+
+    logger.info(`Found ${orphanDocs.length} orphan documents in ${collectionPath}`);
+
+    // Delete orphan documents in batches
+    for (let i = 0; i < orphanDocs.length; i += config.batchSize) {
+        const batch = orphanDocs.slice(i, i + config.batchSize);
+        const writeBatch = destDb.batch();
+
+        for (const doc of batch) {
+            // If subcollections are included, recursively delete orphans in subcollections first
+            if (config.includeSubcollections) {
+                const subcollections = await getSubcollections(doc.ref);
+                for (const subId of subcollections) {
+                    if (matchesExcludePattern(subId, config.exclude)) {
+                        continue;
+                    }
+                    const subPath = `${collectionPath}/${doc.id}/${subId}`;
+                    // For orphan parent docs, clear all subcollection data
+                    deletedCount += await clearCollection(destDb, subPath, config, logger, true);
+                }
+            }
+
+            writeBatch.delete(doc.ref);
+            deletedCount++;
+        }
+
+        if (!config.dryRun) {
+            await withRetry(() => writeBatch.commit(), {
+                retries: config.retries,
+                onRetry: (attempt, max, err, delay) => {
+                    logger.error(`Retry delete orphans ${attempt}/${max} for ${collectionPath}`, {
+                        error: err.message,
+                        delay,
+                    });
+                },
+            });
+        }
+
+        logger.info(`Deleted ${batch.length} orphan documents from ${collectionPath}`);
+    }
+
+    // Also check subcollections of existing documents for orphans
+    if (config.includeSubcollections) {
+        for (const sourceDoc of sourceSnapshot.docs) {
+            const sourceSubcollections = await getSubcollections(sourceDoc.ref);
+            for (const subId of sourceSubcollections) {
+                if (matchesExcludePattern(subId, config.exclude)) {
+                    continue;
+                }
+                const subPath = `${collectionPath}/${sourceDoc.id}/${subId}`;
+                deletedCount += await deleteOrphanDocuments(sourceDb, destDb, subPath, config, logger);
+            }
+        }
     }
 
     return deletedCount;
@@ -1047,6 +1147,26 @@ try {
 
     if (progressBar) {
         progressBar.stop();
+    }
+
+    // Delete orphan documents if enabled (sync mode)
+    if (config.deleteMissing) {
+        console.log('\n🔄 Deleting orphan documents (sync mode)...');
+        for (const collection of config.collections) {
+            const deleted = await deleteOrphanDocuments(
+                sourceDb,
+                destDb,
+                collection,
+                config,
+                logger
+            );
+            stats.documentsDeleted += deleted;
+        }
+        if (stats.documentsDeleted > 0) {
+            console.log(`   Deleted ${stats.documentsDeleted} orphan documents`);
+        } else {
+            console.log('   No orphan documents found');
+        }
     }
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);

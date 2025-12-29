@@ -16,6 +16,7 @@ Transfer documents between Firebase projects with support for subcollections, fi
 - **Merge mode** - Update existing documents instead of overwriting
 - **Parallel transfers** - Copy multiple collections simultaneously
 - **Clear destination** - Optionally delete destination data before transfer
+- **Sync mode** - Delete destination docs not present in source
 - **Progress bar** - Real-time progress with ETA
 - **Automatic retry** - Exponential backoff on network errors
 - **Dry run mode** - Preview changes before applying (enabled by default)
@@ -117,6 +118,9 @@ fscopy -f config.ini -q
 
 # Clear destination before transfer (DESTRUCTIVE)
 fscopy -f config.ini --clear
+
+# Sync mode: delete orphan docs in destination
+fscopy -f config.ini --delete-missing
 ```
 
 ## Configuration
@@ -145,6 +149,7 @@ limit = 0
 merge = false
 parallel = 1
 clear = false
+deleteMissing = false
 ```
 
 ### JSON Format
@@ -166,7 +171,8 @@ fscopy --init config.json
   "exclude": ["logs", "cache"],
   "merge": false,
   "parallel": 1,
-  "clear": false
+  "clear": false,
+  "deleteMissing": false
 }
 ```
 
@@ -192,6 +198,7 @@ fscopy --init config.json
 | `--quiet` | `-q` | boolean | `false` | No progress bar |
 | `--yes` | `-y` | boolean | `false` | Skip confirmation |
 | `--clear` |  | boolean | `false` | Clear destination before transfer |
+| `--delete-missing` |  | boolean | `false` | Delete dest docs not in source |
 
 ## How It Works
 
@@ -209,6 +216,7 @@ fscopy --init config.json
 - **Exclude patterns support globs** - e.g., `temp/*`, `*/logs`
 - **Progress bar shows ETA** - Based on documents processed
 - **Clear is destructive** - `--clear` deletes all destination docs before transfer
+- **Delete-missing syncs** - `--delete-missing` removes orphan docs after transfer
 
 ## Development
 

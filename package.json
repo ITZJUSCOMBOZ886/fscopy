@@ -1,5 +1,5 @@
 {
-    "name": "fscopy",
+    "name": "@fazetitans/fscopy",
     "version": "1.0.0",
     "description": "Fast CLI tool to copy Firestore collections between Firebase projects with filtering, parallel transfers, and subcollection support",
     "type": "module",

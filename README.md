@@ -1,10 +1,20 @@
-# fscopy
+<p align="center">
+  <img src="assets/banner.png" alt="fscopy banner" width="600">
+</p>
 
-[![CI](https://github.com/fazetitans/fscopy/actions/workflows/ci.yml/badge.svg)](https://github.com/fazetitans/fscopy/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/fscopy.svg)](https://www.npmjs.com/package/fscopy)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<h1 align="center">
+  <img src="assets/logo.png" alt="fscopy logo" width="40" height="40" style="vertical-align: middle;">
+  fscopy
+</h1>
 
-> Fast CLI tool to copy Firestore collections between Firebase projects
+<p align="center">
+  <a href="https://www.npmjs.com/package/@fazetitans/fscopy"><img src="https://img.shields.io/npm/v/@fazetitans/fscopy.svg" alt="npm version"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+</p>
+
+<p align="center">
+  <strong>Fast CLI tool to copy Firestore collections between Firebase projects</strong>
+</p>
 
 Transfer documents between Firebase projects with support for subcollections, filtering, parallel transfers, and merge mode. Built with [Bun](https://bun.sh) for maximum performance.
 
@@ -34,16 +44,16 @@ Transfer documents between Firebase projects with support for subcollections, fi
 
 ```bash
 # Global install
-bun add -g fscopy
+bun add -g @fazetitans/fscopy
 
 # Or run directly
-bunx fscopy --help
+bunx @fazetitans/fscopy --help
 ```
 
 ### With npm
 
 ```bash
-npm install -g fscopy
+npm install -g @fazetitans/fscopy
 ```
 
 ### Prerequisites

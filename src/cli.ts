@@ -36,7 +36,13 @@ interface Config {
     parallel: number;
     clear: boolean;
     deleteMissing: boolean;
+    transform: string | null;
 }
+
+type TransformFunction = (
+    doc: Record<string, unknown>,
+    meta: { id: string; path: string }
+) => Record<string, unknown> | null;
 
 interface Stats {
     collectionsProcessed: number;
@@ -80,6 +86,7 @@ interface CliArgs {
     clear?: boolean;
     deleteMissing?: boolean;
     interactive?: boolean;
+    transform?: string;
 }
 
 // =============================================================================
@@ -192,6 +199,11 @@ const argv = yargs(hideBin(process.argv))
         description: 'Interactive mode with prompts for project and collection selection',
         default: false,
     })
+    .option('transform', {
+        alias: 't',
+        type: 'string',
+        description: 'Path to JS/TS file exporting a transform(doc, meta) function',
+    })
     .example('$0 --init config.ini', 'Generate INI config template (default)')
     .example('$0 --init config.json', 'Generate JSON config template')
     .example('$0 -f config.ini', 'Run transfer with config file')
@@ -204,6 +216,7 @@ const argv = yargs(hideBin(process.argv))
     .example('$0 -f config.ini --clear', 'Clear destination before transfer')
     .example('$0 -f config.ini --delete-missing', 'Sync mode: delete orphan docs in dest')
     .example('$0 -i', 'Interactive mode with prompts')
+    .example('$0 -f config.ini -t ./transform.ts', 'Transform documents during transfer')
     .help()
     .parseSync() as CliArgs;
 
@@ -226,6 +239,7 @@ const defaults: Config = {
     parallel: 1,
     clear: false,
     deleteMissing: false,
+    transform: null,
 };
 
 const iniTemplate = `; fscopy configuration file
@@ -255,6 +269,8 @@ parallel = 1
 clear = false
 ; Delete destination docs not present in source (sync mode)
 deleteMissing = false
+; Transform documents during transfer (path to JS/TS file)
+; transform = ./transforms/anonymize.ts
 `;
 
 const jsonTemplate = {
@@ -271,6 +287,7 @@ const jsonTemplate = {
     parallel: 1,
     clear: false,
     deleteMissing: false,
+    transform: null,
 };
 
 // =============================================================================
@@ -464,6 +481,7 @@ function parseIniConfig(content: string): Partial<Config> {
             parallel?: string;
             clear?: string | boolean;
             deleteMissing?: string | boolean;
+            transform?: string;
         };
     };
 
@@ -494,6 +512,7 @@ function parseIniConfig(content: string): Partial<Config> {
         parallel: Number.parseInt(parsed.options?.parallel ?? '', 10) || 1,
         clear: parseBoolean(parsed.options?.clear),
         deleteMissing: parseBoolean(parsed.options?.deleteMissing),
+        transform: parsed.options?.transform ?? null,
     };
 }
 
@@ -512,6 +531,7 @@ function parseJsonConfig(content: string): Partial<Config> {
         parallel?: number;
         clear?: boolean;
         deleteMissing?: boolean;
+        transform?: string;
     };
 
     return {
@@ -528,6 +548,7 @@ function parseJsonConfig(content: string): Partial<Config> {
         parallel: config.parallel,
         clear: config.clear,
         deleteMissing: config.deleteMissing,
+        transform: config.transform ?? null,
     };
 }
 
@@ -573,6 +594,7 @@ function mergeConfig(defaultConfig: Config, fileConfig: Partial<Config>, cliArgs
         parallel: cliArgs.parallel ?? fileConfig.parallel ?? defaultConfig.parallel,
         clear: cliArgs.clear ?? fileConfig.clear ?? defaultConfig.clear,
         deleteMissing: cliArgs.deleteMissing ?? fileConfig.deleteMissing ?? defaultConfig.deleteMissing,
+        transform: cliArgs.transform ?? fileConfig.transform ?? defaultConfig.transform,
     };
 }
 
@@ -623,6 +645,38 @@ function generateConfigFile(outputPath: string): boolean {
 }
 
 // =============================================================================
+// Transform Loading
+// =============================================================================
+
+async function loadTransformFunction(transformPath: string): Promise<TransformFunction> {
+    const absolutePath = path.resolve(transformPath);
+
+    if (!fs.existsSync(absolutePath)) {
+        throw new Error(`Transform file not found: ${absolutePath}`);
+    }
+
+    try {
+        const module = await import(absolutePath);
+
+        // Look for 'transform' export (default or named)
+        const transformFn = module.default?.transform ?? module.transform ?? module.default;
+
+        if (typeof transformFn !== 'function') {
+            throw new Error(
+                `Transform file must export a 'transform' function. Got: ${typeof transformFn}`
+            );
+        }
+
+        return transformFn as TransformFunction;
+    } catch (error) {
+        if ((error as Error).message.includes('Transform file')) {
+            throw error;
+        }
+        throw new Error(`Failed to load transform file: ${(error as Error).message}`);
+    }
+}
+
+// =============================================================================
 // Display & Confirmation
 // =============================================================================
 
@@ -661,6 +715,9 @@ function displayConfig(config: Config): void {
     }
     if (config.deleteMissing) {
         console.log(`  🔄 Delete missing:       enabled (sync mode)`);
+    }
+    if (config.transform) {
+        console.log(`  🔧 Transform:            ${config.transform}`);
     }
 
     console.log('');
@@ -1028,6 +1085,7 @@ interface TransferContext {
     stats: Stats;
     logger: Logger;
     progressBar: cliProgress.SingleBar | null;
+    transformFn: TransformFunction | null;
 }
 
 async function transferCollection(
@@ -1035,7 +1093,7 @@ async function transferCollection(
     collectionPath: string,
     depth: number = 0
 ): Promise<void> {
-    const { sourceDb, destDb, config, stats, logger, progressBar } = ctx;
+    const { sourceDb, destDb, config, stats, logger, progressBar, transformFn } = ctx;
 
     const sourceCollectionRef = sourceDb.collection(collectionPath);
     let query: FirebaseFirestore.Query = sourceCollectionRef;
@@ -1076,12 +1134,33 @@ async function transferCollection(
         for (const doc of batch) {
             const destDocRef = destDb.collection(collectionPath).doc(doc.id);
 
+            // Apply transform if provided
+            let docData = doc.data() as Record<string, unknown>;
+            if (transformFn) {
+                const transformed = transformFn(docData, {
+                    id: doc.id,
+                    path: `${collectionPath}/${doc.id}`,
+                });
+                if (transformed === null) {
+                    // Skip this document if transform returns null
+                    logger.info('Skipped document (transform returned null)', {
+                        collection: collectionPath,
+                        docId: doc.id,
+                    });
+                    if (progressBar) {
+                        progressBar.increment();
+                    }
+                    continue;
+                }
+                docData = transformed;
+            }
+
             if (!config.dryRun) {
                 // Use merge option if enabled
                 if (config.merge) {
-                    destBatch.set(destDocRef, doc.data(), { merge: true });
+                    destBatch.set(destDocRef, docData, { merge: true });
                 } else {
-                    destBatch.set(destDocRef, doc.data());
+                    destBatch.set(destDocRef, docData);
                 }
             }
 
@@ -1207,6 +1286,14 @@ try {
     logger.init();
     logger.info('Transfer started', { config: config as unknown as Record<string, unknown> });
 
+    // Load transform function if specified
+    let transformFn: TransformFunction | null = null;
+    if (config.transform) {
+        console.log(`\n🔧 Loading transform: ${config.transform}`);
+        transformFn = await loadTransformFunction(config.transform);
+        console.log('   Transform loaded successfully');
+    }
+
     console.log('\n');
     const startTime = Date.now();
 
@@ -1257,7 +1344,7 @@ try {
         console.log(`   Deleted ${stats.documentsDeleted} documents\n`);
     }
 
-    const ctx: TransferContext = { sourceDb, destDb, config, stats, logger, progressBar };
+    const ctx: TransferContext = { sourceDb, destDb, config, stats, logger, progressBar, transformFn };
 
     // Transfer collections (with optional parallelism)
     if (config.parallel > 1) {

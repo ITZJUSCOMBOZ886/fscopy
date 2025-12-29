@@ -48,6 +48,7 @@ fscopy -f config.ini --parallel 3  # Parallel transfers
 fscopy -f config.ini --clear  # Clear destination before transfer
 fscopy -f config.ini --delete-missing  # Sync mode: delete orphan docs
 fscopy -i                              # Interactive mode with prompts
+fscopy -f config.ini -t ./transform.ts # Transform docs during transfer
 
 # Local development:
 bun start -- -f config.ini              # Run locally
@@ -75,8 +76,9 @@ Single-file TypeScript CLI (`src/cli.ts`) with shebang `#!/usr/bin/env bun`.
 
 - `countDocuments()` - Counts total docs for progress bar
 - `initializeFirebase()` - Creates two Firebase Admin apps (source/dest)
+- `loadTransformFunction()` - Dynamically loads transform file (when --transform is used)
 - `clearCollection()` - Deletes all docs from destination (when --clear is used)
-- `transferCollection()` - Recursive function with retry handling
+- `transferCollection()` - Recursive function with retry handling and transform support
 - `deleteOrphanDocuments()` - Deletes docs not in source (when --delete-missing is used)
 - `getSubcollections()` - Discovers nested collections via `listCollections()`
 
@@ -109,3 +111,4 @@ INI format uses `[projects]` section for source/dest and `[transfer]` section fo
 | Clear dest     | `--clear`          | `clear` ([options])        | `clear`                 | false    |
 | Delete missing | `--delete-missing` | `deleteMissing` ([options])| `deleteMissing`         | false    |
 | Interactive    | `-i`               | -                          | -                       | false    |
+| Transform      | `-t`               | `transform` ([options])    | `transform`             | null     |

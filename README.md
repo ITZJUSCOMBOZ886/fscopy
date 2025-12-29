@@ -17,6 +17,7 @@ Transfer documents between Firebase projects with support for subcollections, fi
 - **Parallel transfers** - Copy multiple collections simultaneously
 - **Clear destination** - Optionally delete destination data before transfer
 - **Sync mode** - Delete destination docs not present in source
+- **Document transform** - Transform data during transfer with custom JS/TS functions
 - **Interactive mode** - Guided setup with prompts for project and collection selection
 - **Progress bar** - Real-time progress with ETA
 - **Automatic retry** - Exponential backoff on network errors
@@ -125,7 +126,41 @@ fscopy -f config.ini --delete-missing
 
 # Interactive mode with prompts
 fscopy -i
+
+# Transform documents during transfer
+fscopy -f config.ini --transform ./transforms/anonymize.ts
 ```
+
+### Document Transform
+
+Transform documents during transfer using a custom function:
+
+```bash
+# Create a transform file
+cat > anonymize.ts << 'EOF'
+export function transform(doc, meta) {
+    // Anonymize email addresses
+    if (doc.email) {
+        doc.email = `user_${meta.id}@example.com`;
+    }
+    // Remove sensitive fields
+    delete doc.password;
+    delete doc.ssn;
+    // Return null to skip the document
+    if (doc.deleted) return null;
+    return doc;
+}
+EOF
+
+# Use the transform
+fscopy -f config.ini -t ./anonymize.ts
+```
+
+The transform function receives:
+- `doc` - The document data as an object
+- `meta` - Metadata with `id` (document ID) and `path` (full document path)
+
+Return the transformed document, or `null` to skip it.
 
 ## Configuration
 
@@ -154,6 +189,7 @@ merge = false
 parallel = 1
 clear = false
 deleteMissing = false
+; transform = ./transforms/anonymize.ts
 ```
 
 ### JSON Format
@@ -176,7 +212,8 @@ fscopy --init config.json
   "merge": false,
   "parallel": 1,
   "clear": false,
-  "deleteMissing": false
+  "deleteMissing": false,
+  "transform": null
 }
 ```
 
@@ -204,6 +241,7 @@ fscopy --init config.json
 | `--clear` |  | boolean | `false` | Clear destination before transfer |
 | `--delete-missing` |  | boolean | `false` | Delete dest docs not in source |
 | `--interactive` | `-i` | boolean | `false` | Interactive mode with prompts |
+| `--transform` | `-t` | string |  | Path to JS/TS transform file |
 
 ## How It Works
 
@@ -222,6 +260,7 @@ fscopy --init config.json
 - **Progress bar shows ETA** - Based on documents processed
 - **Clear is destructive** - `--clear` deletes all destination docs before transfer
 - **Delete-missing syncs** - `--delete-missing` removes orphan docs after transfer
+- **Transform applies to all** - Transform function is applied to both root and subcollection docs
 
 ## Development
 

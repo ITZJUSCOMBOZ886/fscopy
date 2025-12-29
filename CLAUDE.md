@@ -50,6 +50,7 @@ fscopy -f config.ini --delete-missing  # Sync mode: delete orphan docs
 fscopy -i                              # Interactive mode with prompts
 fscopy -f config.ini -t ./transform.ts # Transform docs during transfer
 fscopy -f config.ini -r users:users_backup # Rename collection in destination
+fscopy -f config.ini --id-prefix backup_  # Add prefix to document IDs
 
 # Local development:
 bun start -- -f config.ini              # Run locally
@@ -83,6 +84,7 @@ Single-file TypeScript CLI (`src/cli.ts`) with shebang `#!/usr/bin/env bun`.
 - `deleteOrphanDocuments()` - Deletes docs not in source (when --delete-missing is used)
 - `getSubcollections()` - Discovers nested collections via `listCollections()`
 - `getDestCollectionPath()` - Resolves renamed destination collection path
+- `getDestDocId()` - Applies prefix/suffix to document IDs
 
 **Tests:**
 
@@ -115,3 +117,5 @@ INI format uses `[projects]` section for source/dest and `[transfer]` section fo
 | Interactive    | `-i`               | -                          | -                       | false    |
 | Transform      | `-t`               | `transform` ([options])    | `transform`             | null     |
 | Rename coll.   | `-r`               | `renameCollection` ([options]) | `renameCollection`  | {}       |
+| ID prefix      | `--id-prefix`      | `idPrefix` ([options])     | `idPrefix`              | null     |
+| ID suffix      | `--id-suffix`      | `idSuffix` ([options])     | `idSuffix`              | null     |

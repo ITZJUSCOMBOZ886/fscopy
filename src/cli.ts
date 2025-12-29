@@ -38,6 +38,8 @@ interface Config {
     deleteMissing: boolean;
     transform: string | null;
     renameCollection: Record<string, string>;
+    idPrefix: string | null;
+    idSuffix: string | null;
 }
 
 type TransformFunction = (
@@ -89,6 +91,8 @@ interface CliArgs {
     interactive?: boolean;
     transform?: string;
     renameCollection?: string[];
+    idPrefix?: string;
+    idSuffix?: string;
 }
 
 // =============================================================================
@@ -211,6 +215,14 @@ const argv = yargs(hideBin(process.argv))
         type: 'array',
         description: 'Rename collection in destination (format: source:dest)',
     })
+    .option('id-prefix', {
+        type: 'string',
+        description: 'Add prefix to document IDs in destination',
+    })
+    .option('id-suffix', {
+        type: 'string',
+        description: 'Add suffix to document IDs in destination',
+    })
     .example('$0 --init config.ini', 'Generate INI config template (default)')
     .example('$0 --init config.json', 'Generate JSON config template')
     .example('$0 -f config.ini', 'Run transfer with config file')
@@ -225,6 +237,7 @@ const argv = yargs(hideBin(process.argv))
     .example('$0 -i', 'Interactive mode with prompts')
     .example('$0 -f config.ini -t ./transform.ts', 'Transform documents during transfer')
     .example('$0 -f config.ini -r users:users_backup', 'Rename collection in destination')
+    .example('$0 -f config.ini --id-prefix backup_', 'Add prefix to document IDs')
     .help()
     .parseSync() as CliArgs;
 
@@ -249,6 +262,8 @@ const defaults: Config = {
     deleteMissing: false,
     transform: null,
     renameCollection: {},
+    idPrefix: null,
+    idSuffix: null,
 };
 
 const iniTemplate = `; fscopy configuration file
@@ -282,6 +297,9 @@ deleteMissing = false
 ; transform = ./transforms/anonymize.ts
 ; Rename collections in destination (format: source:dest, comma-separated)
 ; renameCollection = users:users_backup, orders:orders_2024
+; Add prefix or suffix to document IDs
+; idPrefix = backup_
+; idSuffix = _v2
 `;
 
 const jsonTemplate = {
@@ -300,6 +318,8 @@ const jsonTemplate = {
     deleteMissing: false,
     transform: null,
     renameCollection: {},
+    idPrefix: null,
+    idSuffix: null,
 };
 
 // =============================================================================
@@ -520,6 +540,8 @@ function parseIniConfig(content: string): Partial<Config> {
             deleteMissing?: string | boolean;
             transform?: string;
             renameCollection?: string;
+            idPrefix?: string;
+            idSuffix?: string;
         };
     };
 
@@ -552,6 +574,8 @@ function parseIniConfig(content: string): Partial<Config> {
         deleteMissing: parseBoolean(parsed.options?.deleteMissing),
         transform: parsed.options?.transform ?? null,
         renameCollection: parseRenameMapping(parsed.options?.renameCollection),
+        idPrefix: parsed.options?.idPrefix ?? null,
+        idSuffix: parsed.options?.idSuffix ?? null,
     };
 }
 
@@ -572,6 +596,8 @@ function parseJsonConfig(content: string): Partial<Config> {
         deleteMissing?: boolean;
         transform?: string;
         renameCollection?: Record<string, string>;
+        idPrefix?: string;
+        idSuffix?: string;
     };
 
     return {
@@ -590,6 +616,8 @@ function parseJsonConfig(content: string): Partial<Config> {
         deleteMissing: config.deleteMissing,
         transform: config.transform ?? null,
         renameCollection: config.renameCollection ?? {},
+        idPrefix: config.idPrefix ?? null,
+        idSuffix: config.idSuffix ?? null,
     };
 }
 
@@ -643,6 +671,8 @@ function mergeConfig(defaultConfig: Config, fileConfig: Partial<Config>, cliArgs
             Object.keys(cliRenameCollection).length > 0
                 ? cliRenameCollection
                 : (fileConfig.renameCollection ?? defaultConfig.renameCollection),
+        idPrefix: cliArgs.idPrefix ?? fileConfig.idPrefix ?? defaultConfig.idPrefix,
+        idSuffix: cliArgs.idSuffix ?? fileConfig.idSuffix ?? defaultConfig.idSuffix,
     };
 }
 
@@ -772,6 +802,15 @@ function displayConfig(config: Config): void {
             .map(([src, dest]) => `${src}→${dest}`)
             .join(', ');
         console.log(`  📝 Rename collections:   ${renameStr}`);
+    }
+    if (config.idPrefix || config.idSuffix) {
+        const idMod = [
+            config.idPrefix ? `prefix: "${config.idPrefix}"` : null,
+            config.idSuffix ? `suffix: "${config.idSuffix}"` : null,
+        ]
+            .filter(Boolean)
+            .join(', ');
+        console.log(`  🏷️  ID modification:      ${idMod}`);
     }
 
     console.log('');
@@ -965,6 +1004,21 @@ function getDestCollectionPath(
     }
 
     return sourcePath;
+}
+
+function getDestDocId(
+    sourceId: string,
+    prefix: string | null,
+    suffix: string | null
+): string {
+    let destId = sourceId;
+    if (prefix) {
+        destId = prefix + destId;
+    }
+    if (suffix) {
+        destId = destId + suffix;
+    }
+    return destId;
 }
 
 // =============================================================================
@@ -1208,7 +1262,9 @@ async function transferCollection(
         const destBatch: WriteBatch = destDb.batch();
 
         for (const doc of batch) {
-            const destDocRef = destDb.collection(destCollectionPath).doc(doc.id);
+            // Get destination document ID (with optional prefix/suffix)
+            const destDocId = getDestDocId(doc.id, config.idPrefix, config.idSuffix);
+            const destDocRef = destDb.collection(destCollectionPath).doc(destDocId);
 
             // Apply transform if provided
             let docData = doc.data() as Record<string, unknown>;
@@ -1248,7 +1304,8 @@ async function transferCollection(
             logger.info('Transferred document', {
                 source: collectionPath,
                 dest: destCollectionPath,
-                docId: doc.id,
+                sourceDocId: doc.id,
+                destDocId: destDocId,
             });
 
             if (config.includeSubcollections) {

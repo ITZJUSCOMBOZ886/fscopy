@@ -19,6 +19,7 @@ Transfer documents between Firebase projects with support for subcollections, fi
 - **Sync mode** - Delete destination docs not present in source
 - **Document transform** - Transform data during transfer with custom JS/TS functions
 - **Collection renaming** - Rename collections in destination for backups or migrations
+- **ID modification** - Add prefix or suffix to document IDs to avoid conflicts
 - **Interactive mode** - Guided setup with prompts for project and collection selection
 - **Progress bar** - Real-time progress with ETA
 - **Automatic retry** - Exponential backoff on network errors
@@ -133,6 +134,12 @@ fscopy -f config.ini --transform ./transforms/anonymize.ts
 
 # Rename collections in destination
 fscopy -f config.ini -r users:users_backup -r orders:orders_2024
+
+# Add prefix to document IDs
+fscopy -f config.ini --id-prefix backup_
+
+# Add suffix to document IDs
+fscopy -f config.ini --id-suffix _archived
 ```
 
 ### Collection Renaming
@@ -148,6 +155,21 @@ fscopy -f config.ini --rename-collection users:users_v2 --rename-collection prod
 ```
 
 Subcollections are automatically renamed along with their parent collection.
+
+### ID Modification
+
+Add prefix or suffix to document IDs to avoid conflicts when merging:
+
+```bash
+# Add prefix: user123 → backup_user123
+fscopy -f config.ini --id-prefix backup_
+
+# Add suffix: user123 → user123_v2
+fscopy -f config.ini --id-suffix _v2
+
+# Combine both: user123 → old_user123_archived
+fscopy -f config.ini --id-prefix old_ --id-suffix _archived
+```
 
 ### Document Transform
 
@@ -175,6 +197,7 @@ fscopy -f config.ini -t ./anonymize.ts
 ```
 
 The transform function receives:
+
 - `doc` - The document data as an object
 - `meta` - Metadata with `id` (document ID) and `path` (full document path)
 
@@ -209,6 +232,8 @@ clear = false
 deleteMissing = false
 ; transform = ./transforms/anonymize.ts
 ; renameCollection = users:users_backup, orders:orders_2024
+; idPrefix = backup_
+; idSuffix = _v2
 ```
 
 ### JSON Format
@@ -219,50 +244,54 @@ fscopy --init config.json
 
 ```json
 {
-  "sourceProject": "my-source-project",
-  "destProject": "my-dest-project",
-  "collections": ["users", "orders"],
-  "includeSubcollections": true,
-  "dryRun": true,
-  "batchSize": 500,
-  "limit": 0,
-  "where": ["status == active"],
-  "exclude": ["logs", "cache"],
-  "merge": false,
-  "parallel": 1,
-  "clear": false,
-  "deleteMissing": false,
-  "transform": null,
-  "renameCollection": {}
+    "sourceProject": "my-source-project",
+    "destProject": "my-dest-project",
+    "collections": ["users", "orders"],
+    "includeSubcollections": true,
+    "dryRun": true,
+    "batchSize": 500,
+    "limit": 0,
+    "where": ["status == active"],
+    "exclude": ["logs", "cache"],
+    "merge": false,
+    "parallel": 1,
+    "clear": false,
+    "deleteMissing": false,
+    "transform": null,
+    "renameCollection": {},
+    "idPrefix": null,
+    "idSuffix": null
 }
 ```
 
 ## CLI Reference
 
-| Option | Alias | Type | Default | Description |
-| ------ | ----- | ---- | ------- | ----------- |
-| `--init` |  | string |  | Generate config template |
-| `--config` | `-f` | string |  | Path to config file |
-| `--source-project` |  | string |  | Source Firebase project |
-| `--dest-project` |  | string |  | Destination project |
-| `--collections` | `-c` | array |  | Collections to transfer |
-| `--include-subcollections` | `-s` | boolean | `false` | Include subcollections |
-| `--where` | `-w` | array |  | Filter documents |
-| `--exclude` | `-x` | array |  | Exclude subcollections |
-| `--merge` | `-m` | boolean | `false` | Merge instead of overwrite |
-| `--parallel` | `-p` | number | `1` | Parallel transfers |
-| `--dry-run` | `-d` | boolean | `true` | Preview without writing |
-| `--batch-size` | `-b` | number | `500` | Documents per batch |
-| `--limit` | `-l` | number | `0` | Limit docs (0 = no limit) |
-| `--retries` |  | number | `3` | Retries on error |
-| `--log` |  | string |  | Log file path |
-| `--quiet` | `-q` | boolean | `false` | No progress bar |
-| `--yes` | `-y` | boolean | `false` | Skip confirmation |
-| `--clear` |  | boolean | `false` | Clear destination before transfer |
-| `--delete-missing` |  | boolean | `false` | Delete dest docs not in source |
-| `--interactive` | `-i` | boolean | `false` | Interactive mode with prompts |
-| `--transform` | `-t` | string |  | Path to JS/TS transform file |
-| `--rename-collection` | `-r` | array |  | Rename collection (source:dest) |
+| Option                     | Alias | Type    | Default | Description                       |
+| -------------------------- | ----- | ------- | ------- | --------------------------------- |
+| `--init`                   |       | string  |         | Generate config template          |
+| `--config`                 | `-f`  | string  |         | Path to config file               |
+| `--source-project`         |       | string  |         | Source Firebase project           |
+| `--dest-project`           |       | string  |         | Destination project               |
+| `--collections`            | `-c`  | array   |         | Collections to transfer           |
+| `--include-subcollections` | `-s`  | boolean | `false` | Include subcollections            |
+| `--where`                  | `-w`  | array   |         | Filter documents                  |
+| `--exclude`                | `-x`  | array   |         | Exclude subcollections            |
+| `--merge`                  | `-m`  | boolean | `false` | Merge instead of overwrite        |
+| `--parallel`               | `-p`  | number  | `1`     | Parallel transfers                |
+| `--dry-run`                | `-d`  | boolean | `true`  | Preview without writing           |
+| `--batch-size`             | `-b`  | number  | `500`   | Documents per batch               |
+| `--limit`                  | `-l`  | number  | `0`     | Limit docs (0 = no limit)         |
+| `--retries`                |       | number  | `3`     | Retries on error                  |
+| `--log`                    |       | string  |         | Log file path                     |
+| `--quiet`                  | `-q`  | boolean | `false` | No progress bar                   |
+| `--yes`                    | `-y`  | boolean | `false` | Skip confirmation                 |
+| `--clear`                  |       | boolean | `false` | Clear destination before transfer |
+| `--delete-missing`         |       | boolean | `false` | Delete dest docs not in source    |
+| `--interactive`            | `-i`  | boolean | `false` | Interactive mode with prompts     |
+| `--transform`              | `-t`  | string  |         | Path to JS/TS transform file      |
+| `--rename-collection`      | `-r`  | array   |         | Rename collection (source:dest)   |
+| `--id-prefix`              |       | string  |         | Add prefix to document IDs        |
+| `--id-suffix`              |       | string  |         | Add suffix to document IDs        |
 
 ## How It Works
 

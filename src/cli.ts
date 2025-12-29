@@ -37,6 +37,7 @@ interface Config {
     clear: boolean;
     deleteMissing: boolean;
     transform: string | null;
+    renameCollection: Record<string, string>;
 }
 
 type TransformFunction = (
@@ -87,6 +88,7 @@ interface CliArgs {
     deleteMissing?: boolean;
     interactive?: boolean;
     transform?: string;
+    renameCollection?: string[];
 }
 
 // =============================================================================
@@ -204,6 +206,11 @@ const argv = yargs(hideBin(process.argv))
         type: 'string',
         description: 'Path to JS/TS file exporting a transform(doc, meta) function',
     })
+    .option('rename-collection', {
+        alias: 'r',
+        type: 'array',
+        description: 'Rename collection in destination (format: source:dest)',
+    })
     .example('$0 --init config.ini', 'Generate INI config template (default)')
     .example('$0 --init config.json', 'Generate JSON config template')
     .example('$0 -f config.ini', 'Run transfer with config file')
@@ -217,6 +224,7 @@ const argv = yargs(hideBin(process.argv))
     .example('$0 -f config.ini --delete-missing', 'Sync mode: delete orphan docs in dest')
     .example('$0 -i', 'Interactive mode with prompts')
     .example('$0 -f config.ini -t ./transform.ts', 'Transform documents during transfer')
+    .example('$0 -f config.ini -r users:users_backup', 'Rename collection in destination')
     .help()
     .parseSync() as CliArgs;
 
@@ -240,6 +248,7 @@ const defaults: Config = {
     clear: false,
     deleteMissing: false,
     transform: null,
+    renameCollection: {},
 };
 
 const iniTemplate = `; fscopy configuration file
@@ -271,6 +280,8 @@ clear = false
 deleteMissing = false
 ; Transform documents during transfer (path to JS/TS file)
 ; transform = ./transforms/anonymize.ts
+; Rename collections in destination (format: source:dest, comma-separated)
+; renameCollection = users:users_backup, orders:orders_2024
 `;
 
 const jsonTemplate = {
@@ -288,6 +299,7 @@ const jsonTemplate = {
     clear: false,
     deleteMissing: false,
     transform: null,
+    renameCollection: {},
 };
 
 // =============================================================================
@@ -450,6 +462,31 @@ function parseStringList(value: string | undefined): string[] {
         .filter((s) => s.length > 0);
 }
 
+function parseRenameMapping(mappings: string[] | string | undefined): Record<string, string> {
+    if (!mappings) return {};
+
+    const result: Record<string, string> = {};
+    const items = Array.isArray(mappings) ? mappings : parseStringList(mappings);
+
+    for (const item of items) {
+        const mapping = String(item).trim();
+        const colonIndex = mapping.indexOf(':');
+        if (colonIndex === -1) {
+            console.warn(`⚠️  Invalid rename mapping: "${mapping}" (missing ':')`);
+            continue;
+        }
+        const source = mapping.slice(0, colonIndex).trim();
+        const dest = mapping.slice(colonIndex + 1).trim();
+        if (!source || !dest) {
+            console.warn(`⚠️  Invalid rename mapping: "${mapping}" (empty source or dest)`);
+            continue;
+        }
+        result[source] = dest;
+    }
+
+    return result;
+}
+
 function matchesExcludePattern(path: string, patterns: string[]): boolean {
     for (const pattern of patterns) {
         if (pattern.includes('*')) {
@@ -482,6 +519,7 @@ function parseIniConfig(content: string): Partial<Config> {
             clear?: string | boolean;
             deleteMissing?: string | boolean;
             transform?: string;
+            renameCollection?: string;
         };
     };
 
@@ -513,6 +551,7 @@ function parseIniConfig(content: string): Partial<Config> {
         clear: parseBoolean(parsed.options?.clear),
         deleteMissing: parseBoolean(parsed.options?.deleteMissing),
         transform: parsed.options?.transform ?? null,
+        renameCollection: parseRenameMapping(parsed.options?.renameCollection),
     };
 }
 
@@ -532,6 +571,7 @@ function parseJsonConfig(content: string): Partial<Config> {
         clear?: boolean;
         deleteMissing?: boolean;
         transform?: string;
+        renameCollection?: Record<string, string>;
     };
 
     return {
@@ -549,6 +589,7 @@ function parseJsonConfig(content: string): Partial<Config> {
         clear: config.clear,
         deleteMissing: config.deleteMissing,
         transform: config.transform ?? null,
+        renameCollection: config.renameCollection ?? {},
     };
 }
 
@@ -571,6 +612,9 @@ function loadConfigFile(configPath?: string): Partial<Config> {
 function mergeConfig(defaultConfig: Config, fileConfig: Partial<Config>, cliArgs: CliArgs): Config {
     // Parse CLI where filters
     const cliWhereFilters = parseWhereFilters(cliArgs.where);
+
+    // Parse CLI rename collection mappings
+    const cliRenameCollection = parseRenameMapping(cliArgs.renameCollection);
 
     return {
         collections: cliArgs.collections ?? fileConfig.collections ?? defaultConfig.collections,
@@ -595,6 +639,10 @@ function mergeConfig(defaultConfig: Config, fileConfig: Partial<Config>, cliArgs
         clear: cliArgs.clear ?? fileConfig.clear ?? defaultConfig.clear,
         deleteMissing: cliArgs.deleteMissing ?? fileConfig.deleteMissing ?? defaultConfig.deleteMissing,
         transform: cliArgs.transform ?? fileConfig.transform ?? defaultConfig.transform,
+        renameCollection:
+            Object.keys(cliRenameCollection).length > 0
+                ? cliRenameCollection
+                : (fileConfig.renameCollection ?? defaultConfig.renameCollection),
     };
 }
 
@@ -718,6 +766,12 @@ function displayConfig(config: Config): void {
     }
     if (config.transform) {
         console.log(`  🔧 Transform:            ${config.transform}`);
+    }
+    if (Object.keys(config.renameCollection).length > 0) {
+        const renameStr = Object.entries(config.renameCollection)
+            .map(([src, dest]) => `${src}→${dest}`)
+            .join(', ');
+        console.log(`  📝 Rename collections:   ${renameStr}`);
     }
 
     console.log('');
@@ -897,6 +951,22 @@ async function getSubcollections(docRef: DocumentReference): Promise<string[]> {
     return collections.map((col) => col.id);
 }
 
+function getDestCollectionPath(
+    sourcePath: string,
+    renameMapping: Record<string, string>
+): string {
+    // Get the root collection name from the source path
+    const rootCollection = sourcePath.split('/')[0];
+
+    // Check if this root collection should be renamed
+    if (renameMapping[rootCollection]) {
+        // Replace the root collection name with the destination name
+        return renameMapping[rootCollection] + sourcePath.slice(rootCollection.length);
+    }
+
+    return sourcePath;
+}
+
 // =============================================================================
 // Transfer Logic
 // =============================================================================
@@ -963,18 +1033,21 @@ async function clearCollection(
 async function deleteOrphanDocuments(
     sourceDb: Firestore,
     destDb: Firestore,
-    collectionPath: string,
+    sourceCollectionPath: string,
     config: Config,
     logger: Logger
 ): Promise<number> {
     let deletedCount = 0;
 
+    // Get the destination path (may be renamed)
+    const destCollectionPath = getDestCollectionPath(sourceCollectionPath, config.renameCollection);
+
     // Get all document IDs from source
-    const sourceSnapshot = await sourceDb.collection(collectionPath).get();
+    const sourceSnapshot = await sourceDb.collection(sourceCollectionPath).get();
     const sourceIds = new Set(sourceSnapshot.docs.map((doc) => doc.id));
 
     // Get all document IDs from destination
-    const destSnapshot = await destDb.collection(collectionPath).get();
+    const destSnapshot = await destDb.collection(destCollectionPath).get();
 
     // Find orphan documents (in dest but not in source)
     const orphanDocs = destSnapshot.docs.filter((doc) => !sourceIds.has(doc.id));
@@ -983,7 +1056,7 @@ async function deleteOrphanDocuments(
         return 0;
     }
 
-    logger.info(`Found ${orphanDocs.length} orphan documents in ${collectionPath}`);
+    logger.info(`Found ${orphanDocs.length} orphan documents in ${destCollectionPath}`);
 
     // Delete orphan documents in batches
     for (let i = 0; i < orphanDocs.length; i += config.batchSize) {
@@ -998,7 +1071,7 @@ async function deleteOrphanDocuments(
                     if (matchesExcludePattern(subId, config.exclude)) {
                         continue;
                     }
-                    const subPath = `${collectionPath}/${doc.id}/${subId}`;
+                    const subPath = `${destCollectionPath}/${doc.id}/${subId}`;
                     // For orphan parent docs, clear all subcollection data
                     deletedCount += await clearCollection(destDb, subPath, config, logger, true);
                 }
@@ -1012,7 +1085,7 @@ async function deleteOrphanDocuments(
             await withRetry(() => writeBatch.commit(), {
                 retries: config.retries,
                 onRetry: (attempt, max, err, delay) => {
-                    logger.error(`Retry delete orphans ${attempt}/${max} for ${collectionPath}`, {
+                    logger.error(`Retry delete orphans ${attempt}/${max} for ${destCollectionPath}`, {
                         error: err.message,
                         delay,
                     });
@@ -1020,7 +1093,7 @@ async function deleteOrphanDocuments(
             });
         }
 
-        logger.info(`Deleted ${batch.length} orphan documents from ${collectionPath}`);
+        logger.info(`Deleted ${batch.length} orphan documents from ${destCollectionPath}`);
     }
 
     // Also check subcollections of existing documents for orphans
@@ -1031,7 +1104,7 @@ async function deleteOrphanDocuments(
                 if (matchesExcludePattern(subId, config.exclude)) {
                     continue;
                 }
-                const subPath = `${collectionPath}/${sourceDoc.id}/${subId}`;
+                const subPath = `${sourceCollectionPath}/${sourceDoc.id}/${subId}`;
                 deletedCount += await deleteOrphanDocuments(sourceDb, destDb, subPath, config, logger);
             }
         }
@@ -1095,6 +1168,9 @@ async function transferCollection(
 ): Promise<void> {
     const { sourceDb, destDb, config, stats, logger, progressBar, transformFn } = ctx;
 
+    // Get the destination path (may be renamed)
+    const destCollectionPath = getDestCollectionPath(collectionPath, config.renameCollection);
+
     const sourceCollectionRef = sourceDb.collection(collectionPath);
     let query: FirebaseFirestore.Query = sourceCollectionRef;
 
@@ -1132,7 +1208,7 @@ async function transferCollection(
         const destBatch: WriteBatch = destDb.batch();
 
         for (const doc of batch) {
-            const destDocRef = destDb.collection(collectionPath).doc(doc.id);
+            const destDocRef = destDb.collection(destCollectionPath).doc(doc.id);
 
             // Apply transform if provided
             let docData = doc.data() as Record<string, unknown>;
@@ -1169,7 +1245,11 @@ async function transferCollection(
                 progressBar.increment();
             }
 
-            logger.info('Transferred document', { collection: collectionPath, docId: doc.id });
+            logger.info('Transferred document', {
+                source: collectionPath,
+                dest: destCollectionPath,
+                docId: doc.id,
+            });
 
             if (config.includeSubcollections) {
                 const subcollections = await getSubcollections(doc.ref);
@@ -1332,9 +1412,10 @@ try {
     if (config.clear) {
         console.log('🗑️  Clearing destination collections...');
         for (const collection of config.collections) {
+            const destCollection = getDestCollectionPath(collection, config.renameCollection);
             const deleted = await clearCollection(
                 destDb,
-                collection,
+                destCollection,
                 config,
                 logger,
                 config.includeSubcollections

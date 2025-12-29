@@ -18,6 +18,7 @@ Transfer documents between Firebase projects with support for subcollections, fi
 - **Clear destination** - Optionally delete destination data before transfer
 - **Sync mode** - Delete destination docs not present in source
 - **Document transform** - Transform data during transfer with custom JS/TS functions
+- **Collection renaming** - Rename collections in destination for backups or migrations
 - **Interactive mode** - Guided setup with prompts for project and collection selection
 - **Progress bar** - Real-time progress with ETA
 - **Automatic retry** - Exponential backoff on network errors
@@ -129,7 +130,24 @@ fscopy -i
 
 # Transform documents during transfer
 fscopy -f config.ini --transform ./transforms/anonymize.ts
+
+# Rename collections in destination
+fscopy -f config.ini -r users:users_backup -r orders:orders_2024
 ```
+
+### Collection Renaming
+
+Rename collections during transfer for backups or migrations:
+
+```bash
+# Backup with dated collection names
+fscopy -f config.ini -r users:users_2024_12_29 -r orders:orders_2024_12_29
+
+# Multiple renames in one command
+fscopy -f config.ini --rename-collection users:users_v2 --rename-collection products:catalog
+```
+
+Subcollections are automatically renamed along with their parent collection.
 
 ### Document Transform
 
@@ -190,6 +208,7 @@ parallel = 1
 clear = false
 deleteMissing = false
 ; transform = ./transforms/anonymize.ts
+; renameCollection = users:users_backup, orders:orders_2024
 ```
 
 ### JSON Format
@@ -213,7 +232,8 @@ fscopy --init config.json
   "parallel": 1,
   "clear": false,
   "deleteMissing": false,
-  "transform": null
+  "transform": null,
+  "renameCollection": {}
 }
 ```
 
@@ -242,6 +262,7 @@ fscopy --init config.json
 | `--delete-missing` |  | boolean | `false` | Delete dest docs not in source |
 | `--interactive` | `-i` | boolean | `false` | Interactive mode with prompts |
 | `--transform` | `-t` | string |  | Path to JS/TS transform file |
+| `--rename-collection` | `-r` | array |  | Rename collection (source:dest) |
 
 ## How It Works
 

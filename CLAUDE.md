@@ -49,6 +49,7 @@ fscopy -f config.ini --clear  # Clear destination before transfer
 fscopy -f config.ini --delete-missing  # Sync mode: delete orphan docs
 fscopy -i                              # Interactive mode with prompts
 fscopy -f config.ini -t ./transform.ts # Transform docs during transfer
+fscopy -f config.ini -r users:users_backup # Rename collection in destination
 
 # Local development:
 bun start -- -f config.ini              # Run locally
@@ -78,9 +79,10 @@ Single-file TypeScript CLI (`src/cli.ts`) with shebang `#!/usr/bin/env bun`.
 - `initializeFirebase()` - Creates two Firebase Admin apps (source/dest)
 - `loadTransformFunction()` - Dynamically loads transform file (when --transform is used)
 - `clearCollection()` - Deletes all docs from destination (when --clear is used)
-- `transferCollection()` - Recursive function with retry handling and transform support
+- `transferCollection()` - Recursive function with retry handling, transform and rename support
 - `deleteOrphanDocuments()` - Deletes docs not in source (when --delete-missing is used)
 - `getSubcollections()` - Discovers nested collections via `listCollections()`
+- `getDestCollectionPath()` - Resolves renamed destination collection path
 
 **Tests:**
 
@@ -112,3 +114,4 @@ INI format uses `[projects]` section for source/dest and `[transfer]` section fo
 | Delete missing | `--delete-missing` | `deleteMissing` ([options])| `deleteMissing`         | false    |
 | Interactive    | `-i`               | -                          | -                       | false    |
 | Transform      | `-t`               | `transform` ([options])    | `transform`             | null     |
+| Rename coll.   | `-r`               | `renameCollection` ([options]) | `renameCollection`  | {}       |

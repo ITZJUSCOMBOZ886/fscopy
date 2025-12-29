@@ -20,6 +20,7 @@ Transfer documents between Firebase projects with support for subcollections, fi
 - **Document transform** - Transform data during transfer with custom JS/TS functions
 - **Collection renaming** - Rename collections in destination for backups or migrations
 - **ID modification** - Add prefix or suffix to document IDs to avoid conflicts
+- **Webhook notifications** - Send Slack, Discord, or custom webhooks on completion
 - **Interactive mode** - Guided setup with prompts for project and collection selection
 - **Progress bar** - Real-time progress with ETA
 - **Automatic retry** - Exponential backoff on network errors
@@ -140,6 +141,9 @@ fscopy -f config.ini --id-prefix backup_
 
 # Add suffix to document IDs
 fscopy -f config.ini --id-suffix _archived
+
+# Send notification to Slack/Discord
+fscopy -f config.ini --webhook https://hooks.slack.com/services/...
 ```
 
 ### Collection Renaming
@@ -202,6 +206,33 @@ The transform function receives:
 - `meta` - Metadata with `id` (document ID) and `path` (full document path)
 
 Return the transformed document, or `null` to skip it.
+
+### Webhook Notifications
+
+Get notified when transfers complete (success or failure):
+
+```bash
+# Slack webhook
+fscopy -f config.ini --webhook https://hooks.slack.com/services/XXX/YYY/ZZZ
+
+# Discord webhook
+fscopy -f config.ini --webhook https://discord.com/api/webhooks/123/abc
+
+# Custom webhook (receives raw JSON payload)
+fscopy -f config.ini --webhook https://api.example.com/webhook
+```
+
+The webhook receives a POST request with:
+
+- `source` / `destination` - Project IDs
+- `collections` - List of transferred collections
+- `stats` - Documents transferred, deleted, errors
+- `duration` - Transfer time in seconds
+- `dryRun` - Whether it was a dry run
+- `success` - Boolean status
+- `error` - Error message (if failed)
+
+Slack and Discord webhooks are automatically formatted with rich messages.
 
 ## Configuration
 
@@ -292,6 +323,7 @@ fscopy --init config.json
 | `--rename-collection`      | `-r`  | array   |         | Rename collection (source:dest)   |
 | `--id-prefix`              |       | string  |         | Add prefix to document IDs        |
 | `--id-suffix`              |       | string  |         | Add suffix to document IDs        |
+| `--webhook`                |       | string  |         | Webhook URL for notifications     |
 
 ## How It Works
 

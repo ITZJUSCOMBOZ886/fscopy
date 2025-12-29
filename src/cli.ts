@@ -40,6 +40,7 @@ interface Config {
     renameCollection: Record<string, string>;
     idPrefix: string | null;
     idSuffix: string | null;
+    webhook: string | null;
 }
 
 type TransformFunction = (
@@ -93,6 +94,7 @@ interface CliArgs {
     renameCollection?: string[];
     idPrefix?: string;
     idSuffix?: string;
+    webhook?: string;
 }
 
 // =============================================================================
@@ -223,6 +225,10 @@ const argv = yargs(hideBin(process.argv))
         type: 'string',
         description: 'Add suffix to document IDs in destination',
     })
+    .option('webhook', {
+        type: 'string',
+        description: 'Webhook URL for transfer notifications (Slack, Discord, or custom)',
+    })
     .example('$0 --init config.ini', 'Generate INI config template (default)')
     .example('$0 --init config.json', 'Generate JSON config template')
     .example('$0 -f config.ini', 'Run transfer with config file')
@@ -238,6 +244,7 @@ const argv = yargs(hideBin(process.argv))
     .example('$0 -f config.ini -t ./transform.ts', 'Transform documents during transfer')
     .example('$0 -f config.ini -r users:users_backup', 'Rename collection in destination')
     .example('$0 -f config.ini --id-prefix backup_', 'Add prefix to document IDs')
+    .example('$0 -f config.ini --webhook https://hooks.slack.com/...', 'Send notification to Slack')
     .help()
     .parseSync() as CliArgs;
 
@@ -264,6 +271,7 @@ const defaults: Config = {
     renameCollection: {},
     idPrefix: null,
     idSuffix: null,
+    webhook: null,
 };
 
 const iniTemplate = `; fscopy configuration file
@@ -300,6 +308,8 @@ deleteMissing = false
 ; Add prefix or suffix to document IDs
 ; idPrefix = backup_
 ; idSuffix = _v2
+; Webhook URL for transfer notifications (Slack, Discord, or custom)
+; webhook = https://hooks.slack.com/services/...
 `;
 
 const jsonTemplate = {
@@ -320,6 +330,7 @@ const jsonTemplate = {
     renameCollection: {},
     idPrefix: null,
     idSuffix: null,
+    webhook: null,
 };
 
 // =============================================================================
@@ -542,6 +553,7 @@ function parseIniConfig(content: string): Partial<Config> {
             renameCollection?: string;
             idPrefix?: string;
             idSuffix?: string;
+            webhook?: string;
         };
     };
 
@@ -576,6 +588,7 @@ function parseIniConfig(content: string): Partial<Config> {
         renameCollection: parseRenameMapping(parsed.options?.renameCollection),
         idPrefix: parsed.options?.idPrefix ?? null,
         idSuffix: parsed.options?.idSuffix ?? null,
+        webhook: parsed.options?.webhook ?? null,
     };
 }
 
@@ -598,6 +611,7 @@ function parseJsonConfig(content: string): Partial<Config> {
         renameCollection?: Record<string, string>;
         idPrefix?: string;
         idSuffix?: string;
+        webhook?: string;
     };
 
     return {
@@ -618,6 +632,7 @@ function parseJsonConfig(content: string): Partial<Config> {
         renameCollection: config.renameCollection ?? {},
         idPrefix: config.idPrefix ?? null,
         idSuffix: config.idSuffix ?? null,
+        webhook: config.webhook ?? null,
     };
 }
 
@@ -673,6 +688,7 @@ function mergeConfig(defaultConfig: Config, fileConfig: Partial<Config>, cliArgs
                 : (fileConfig.renameCollection ?? defaultConfig.renameCollection),
         idPrefix: cliArgs.idPrefix ?? fileConfig.idPrefix ?? defaultConfig.idPrefix,
         idSuffix: cliArgs.idSuffix ?? fileConfig.idSuffix ?? defaultConfig.idSuffix,
+        webhook: cliArgs.webhook ?? fileConfig.webhook ?? defaultConfig.webhook,
     };
 }
 
@@ -1028,6 +1044,136 @@ function getDestDocId(
         destId = destId + suffix;
     }
     return destId;
+}
+
+// =============================================================================
+// Webhook
+// =============================================================================
+
+interface WebhookPayload {
+    source: string;
+    destination: string;
+    collections: string[];
+    stats: Stats;
+    duration: number;
+    dryRun: boolean;
+    success: boolean;
+    error?: string;
+}
+
+function detectWebhookType(url: string): 'slack' | 'discord' | 'custom' {
+    if (url.includes('hooks.slack.com')) {
+        return 'slack';
+    }
+    if (url.includes('discord.com/api/webhooks')) {
+        return 'discord';
+    }
+    return 'custom';
+}
+
+function formatSlackPayload(payload: WebhookPayload): Record<string, unknown> {
+    const status = payload.success ? ':white_check_mark: Success' : ':x: Failed';
+    const mode = payload.dryRun ? ' (DRY RUN)' : '';
+
+    const fields = [
+        { title: 'Source', value: payload.source, short: true },
+        { title: 'Destination', value: payload.destination, short: true },
+        { title: 'Collections', value: payload.collections.join(', '), short: false },
+        { title: 'Transferred', value: String(payload.stats.documentsTransferred), short: true },
+        { title: 'Deleted', value: String(payload.stats.documentsDeleted), short: true },
+        { title: 'Errors', value: String(payload.stats.errors), short: true },
+        { title: 'Duration', value: `${payload.duration}s`, short: true },
+    ];
+
+    if (payload.error) {
+        fields.push({ title: 'Error', value: payload.error, short: false });
+    }
+
+    return {
+        attachments: [
+            {
+                color: payload.success ? '#36a64f' : '#ff0000',
+                title: `fscopy Transfer${mode}`,
+                text: status,
+                fields,
+                footer: 'fscopy',
+                ts: Math.floor(Date.now() / 1000),
+            },
+        ],
+    };
+}
+
+function formatDiscordPayload(payload: WebhookPayload): Record<string, unknown> {
+    const status = payload.success ? '✅ Success' : '❌ Failed';
+    const mode = payload.dryRun ? ' (DRY RUN)' : '';
+    const color = payload.success ? 0x36a64f : 0xff0000;
+
+    const fields = [
+        { name: 'Source', value: payload.source, inline: true },
+        { name: 'Destination', value: payload.destination, inline: true },
+        { name: 'Collections', value: payload.collections.join(', '), inline: false },
+        { name: 'Transferred', value: String(payload.stats.documentsTransferred), inline: true },
+        { name: 'Deleted', value: String(payload.stats.documentsDeleted), inline: true },
+        { name: 'Errors', value: String(payload.stats.errors), inline: true },
+        { name: 'Duration', value: `${payload.duration}s`, inline: true },
+    ];
+
+    if (payload.error) {
+        fields.push({ name: 'Error', value: payload.error, inline: false });
+    }
+
+    return {
+        embeds: [
+            {
+                title: `fscopy Transfer${mode}`,
+                description: status,
+                color,
+                fields,
+                footer: { text: 'fscopy' },
+                timestamp: new Date().toISOString(),
+            },
+        ],
+    };
+}
+
+async function sendWebhook(
+    webhookUrl: string,
+    payload: WebhookPayload,
+    logger: Logger
+): Promise<void> {
+    const webhookType = detectWebhookType(webhookUrl);
+
+    let body: Record<string, unknown>;
+    switch (webhookType) {
+        case 'slack':
+            body = formatSlackPayload(payload);
+            break;
+        case 'discord':
+            body = formatDiscordPayload(payload);
+            break;
+        default:
+            body = payload as unknown as Record<string, unknown>;
+    }
+
+    try {
+        const response = await fetch(webhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+
+        logger.info(`Webhook sent successfully (${webhookType})`, { url: webhookUrl });
+        console.log(`📤 Webhook notification sent (${webhookType})`);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(`Failed to send webhook: ${message}`, { url: webhookUrl });
+        console.error(`⚠️  Failed to send webhook: ${message}`);
+    }
 }
 
 // =============================================================================
@@ -1401,9 +1547,14 @@ if (argv.init !== undefined) {
 }
 
 // Main transfer flow
+let config: Config = defaults;
+let logger: Logger | null = null;
+let stats: Stats = { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0 };
+let startTime = Date.now();
+
 try {
     const fileConfig = loadConfigFile(argv.config);
-    let config = mergeConfig(defaults, fileConfig, argv);
+    config = mergeConfig(defaults, fileConfig, argv);
 
     // Run interactive mode if enabled
     if (argv.interactive) {
@@ -1428,7 +1579,7 @@ try {
         }
     }
 
-    const logger = new Logger(argv.log);
+    logger = new Logger(argv.log);
     logger.init();
     logger.info('Transfer started', { config: config as unknown as Record<string, unknown> });
 
@@ -1441,11 +1592,11 @@ try {
     }
 
     console.log('\n');
-    const startTime = Date.now();
+    startTime = Date.now();
 
     const { sourceDb, destDb } = initializeFirebase(config);
 
-    const stats: Stats = {
+    stats = {
         collectionsProcessed: 0,
         documentsTransferred: 0,
         documentsDeleted: 0,
@@ -1559,9 +1710,46 @@ try {
     }
     console.log('='.repeat(60) + '\n');
 
+    // Send webhook notification if configured
+    if (config.webhook) {
+        await sendWebhook(
+            config.webhook,
+            {
+                source: config.sourceProject!,
+                destination: config.destProject!,
+                collections: config.collections,
+                stats,
+                duration: Number.parseFloat(duration),
+                dryRun: config.dryRun,
+                success: true,
+            },
+            logger
+        );
+    }
+
     await cleanupFirebase();
 } catch (error) {
-    console.error('\n❌ Error during transfer:', (error as Error).message);
+    const errorMessage = (error as Error).message;
+    console.error('\n❌ Error during transfer:', errorMessage);
+
+    // Send webhook notification on error if configured
+    if (config.webhook && logger) {
+        await sendWebhook(
+            config.webhook,
+            {
+                source: config.sourceProject ?? 'unknown',
+                destination: config.destProject ?? 'unknown',
+                collections: config.collections,
+                stats,
+                duration: Number.parseFloat(((Date.now() - startTime) / 1000).toFixed(2)),
+                dryRun: config.dryRun,
+                success: false,
+                error: errorMessage,
+            },
+            logger
+        );
+    }
+
     await cleanupFirebase();
     process.exit(1);
 }

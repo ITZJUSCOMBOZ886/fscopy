@@ -311,6 +311,7 @@ fscopy --init config.json
 - **Clear is destructive** - `--clear` deletes all destination docs before transfer
 - **Delete-missing syncs** - `--delete-missing` removes orphan docs after transfer
 - **Transform applies to all** - Transform function is applied to both root and subcollection docs
+- **Same project allowed** - Source and destination can be the same project when using `--rename-collection` or `--id-prefix`/`--id-suffix`
 
 ## Development
 

@@ -47,6 +47,7 @@ fscopy -f config.ini --merge  # Merge instead of overwrite
 fscopy -f config.ini --parallel 3  # Parallel transfers
 fscopy -f config.ini --clear  # Clear destination before transfer
 fscopy -f config.ini --delete-missing  # Sync mode: delete orphan docs
+fscopy -i                              # Interactive mode with prompts
 
 # Local development:
 bun start -- -f config.ini              # Run locally
@@ -107,3 +108,4 @@ INI format uses `[projects]` section for source/dest and `[transfer]` section fo
 | Parallel       | `-p`               | `parallel` ([options])     | `parallel`              | 1        |
 | Clear dest     | `--clear`          | `clear` ([options])        | `clear`                 | false    |
 | Delete missing | `--delete-missing` | `deleteMissing` ([options])| `deleteMissing`         | false    |
+| Interactive    | `-i`               | -                          | -                       | false    |

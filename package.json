@@ -51,6 +51,7 @@
         "LICENSE"
     ],
     "dependencies": {
+        "@inquirer/prompts": "^8.1.0",
         "cli-progress": "^3.12.0",
         "firebase-admin": "^13.6.0",
         "ini": "^6.0.0",

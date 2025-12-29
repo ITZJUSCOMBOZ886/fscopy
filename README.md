@@ -17,6 +17,7 @@ Transfer documents between Firebase projects with support for subcollections, fi
 - **Parallel transfers** - Copy multiple collections simultaneously
 - **Clear destination** - Optionally delete destination data before transfer
 - **Sync mode** - Delete destination docs not present in source
+- **Interactive mode** - Guided setup with prompts for project and collection selection
 - **Progress bar** - Real-time progress with ETA
 - **Automatic retry** - Exponential backoff on network errors
 - **Dry run mode** - Preview changes before applying (enabled by default)
@@ -121,6 +122,9 @@ fscopy -f config.ini --clear
 
 # Sync mode: delete orphan docs in destination
 fscopy -f config.ini --delete-missing
+
+# Interactive mode with prompts
+fscopy -i
 ```
 
 ## Configuration
@@ -199,6 +203,7 @@ fscopy --init config.json
 | `--yes` | `-y` | boolean | `false` | Skip confirmation |
 | `--clear` |  | boolean | `false` | Clear destination before transfer |
 | `--delete-missing` |  | boolean | `false` | Delete dest docs not in source |
+| `--interactive` | `-i` | boolean | `false` | Interactive mode with prompts |
 
 ## How It Works
 

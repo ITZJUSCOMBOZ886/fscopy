@@ -9,6 +9,7 @@ import cliProgress from 'cli-progress';
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
+import { input, confirm, checkbox } from '@inquirer/prompts';
 
 // =============================================================================
 // Types
@@ -78,6 +79,7 @@ interface CliArgs {
     parallel?: number;
     clear?: boolean;
     deleteMissing?: boolean;
+    interactive?: boolean;
 }
 
 // =============================================================================
@@ -184,6 +186,12 @@ const argv = yargs(hideBin(process.argv))
         description: 'Delete destination docs not present in source (sync mode)',
         default: false,
     })
+    .option('interactive', {
+        alias: 'i',
+        type: 'boolean',
+        description: 'Interactive mode with prompts for project and collection selection',
+        default: false,
+    })
     .example('$0 --init config.ini', 'Generate INI config template (default)')
     .example('$0 --init config.json', 'Generate JSON config template')
     .example('$0 -f config.ini', 'Run transfer with config file')
@@ -195,6 +203,7 @@ const argv = yargs(hideBin(process.argv))
     .example('$0 -f config.ini --parallel 3', 'Transfer 3 collections in parallel')
     .example('$0 -f config.ini --clear', 'Clear destination before transfer')
     .example('$0 -f config.ini --delete-missing', 'Sync mode: delete orphan docs in dest')
+    .example('$0 -i', 'Interactive mode with prompts')
     .help()
     .parseSync() as CliArgs;
 
@@ -682,6 +691,116 @@ async function askConfirmation(config: Config): Promise<boolean> {
 }
 
 // =============================================================================
+// Interactive Mode
+// =============================================================================
+
+async function runInteractiveMode(config: Config): Promise<Config> {
+    console.log('\n' + '='.repeat(60));
+    console.log('🔄 FSCOPY - INTERACTIVE MODE');
+    console.log('='.repeat(60) + '\n');
+
+    // Prompt for source project if not set
+    let sourceProject = config.sourceProject;
+    if (!sourceProject) {
+        sourceProject = await input({
+            message: 'Source Firebase project ID:',
+            validate: (value) => value.length > 0 || 'Project ID is required',
+        });
+    } else {
+        console.log(`📤 Source project: ${sourceProject}`);
+    }
+
+    // Prompt for destination project if not set
+    let destProject = config.destProject;
+    if (!destProject) {
+        destProject = await input({
+            message: 'Destination Firebase project ID:',
+            validate: (value) => {
+                if (value.length === 0) return 'Project ID is required';
+                if (value === sourceProject) return 'Must be different from source';
+                return true;
+            },
+        });
+    } else {
+        console.log(`📥 Destination project: ${destProject}`);
+    }
+
+    // Initialize source Firebase to list collections
+    console.log('\n📊 Connecting to source project...');
+    const tempSourceApp = admin.initializeApp(
+        {
+            credential: admin.credential.applicationDefault(),
+            projectId: sourceProject,
+        },
+        'interactive-source'
+    );
+    const sourceDb = tempSourceApp.firestore();
+
+    // List all root collections
+    const rootCollections = await sourceDb.listCollections();
+    const collectionIds = rootCollections.map((col) => col.id);
+
+    if (collectionIds.length === 0) {
+        console.log('\n⚠️  No collections found in source project');
+        await tempSourceApp.delete();
+        process.exit(0);
+    }
+
+    // Count documents in each collection for preview
+    console.log('\n📋 Available collections:');
+    const collectionInfo: { id: string; count: number }[] = [];
+    for (const id of collectionIds) {
+        const snapshot = await sourceDb.collection(id).count().get();
+        const count = snapshot.data().count;
+        collectionInfo.push({ id, count });
+        console.log(`   - ${id} (${count} documents)`);
+    }
+
+    // Let user select collections
+    console.log('');
+    const selectedCollections = await checkbox({
+        message: 'Select collections to transfer:',
+        choices: collectionInfo.map((col) => ({
+            name: `${col.id} (${col.count} docs)`,
+            value: col.id,
+            checked: config.collections.includes(col.id),
+        })),
+        validate: (value) => value.length > 0 || 'Select at least one collection',
+    });
+
+    // Ask about options
+    console.log('');
+    const includeSubcollections = await confirm({
+        message: 'Include subcollections?',
+        default: config.includeSubcollections,
+    });
+
+    const dryRun = await confirm({
+        message: 'Dry run mode (preview without writing)?',
+        default: config.dryRun,
+    });
+
+    const merge = await confirm({
+        message: 'Merge mode (update instead of overwrite)?',
+        default: config.merge,
+    });
+
+    // Clean up temporary app
+    await tempSourceApp.delete();
+
+    // Return updated config
+    return {
+        ...config,
+        sourceProject,
+        destProject,
+        collections: selectedCollections,
+        includeSubcollections,
+        dryRun,
+        merge,
+    };
+}
+
+// =============================================================================
 // Firebase
 // =============================================================================
 
@@ -1059,7 +1178,12 @@ if (argv.init !== undefined) {
 // Main transfer flow
 try {
     const fileConfig = loadConfigFile(argv.config);
-    const config = mergeConfig(defaults, fileConfig, argv);
+    let config = mergeConfig(defaults, fileConfig, argv);
+
+    // Run interactive mode if enabled
+    if (argv.interactive) {
+        config = await runInteractiveMode(config);
+    }
 
     displayConfig(config);
 
@@ -1070,7 +1194,8 @@ try {
         process.exit(1);
     }
 
-    if (!argv.yes) {
+    // Skip confirmation in interactive mode (already confirmed by selection)
+    if (!argv.yes && !argv.interactive) {
         const confirmed = await askConfirmation(config);
         if (!confirmed) {
             console.log('\n🚫 Transfer cancelled by user\n');

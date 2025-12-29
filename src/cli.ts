@@ -41,6 +41,8 @@ interface Config {
     idPrefix: string | null;
     idSuffix: string | null;
     webhook: string | null;
+    resume: boolean;
+    stateFile: string;
 }
 
 type TransformFunction = (
@@ -53,6 +55,17 @@ interface Stats {
     documentsTransferred: number;
     documentsDeleted: number;
     errors: number;
+}
+
+interface TransferState {
+    version: number;
+    sourceProject: string;
+    destProject: string;
+    collections: string[];
+    startedAt: string;
+    updatedAt: string;
+    completedDocs: Record<string, string[]>; // collectionPath -> array of doc IDs
+    stats: Stats;
 }
 
 interface LogEntry {
@@ -95,6 +108,8 @@ interface CliArgs {
     idPrefix?: string;
     idSuffix?: string;
     webhook?: string;
+    resume?: boolean;
+    stateFile?: string;
 }
 
 // =============================================================================
@@ -229,6 +244,16 @@ const argv = yargs(hideBin(process.argv))
         type: 'string',
         description: 'Webhook URL for transfer notifications (Slack, Discord, or custom)',
     })
+    .option('resume', {
+        type: 'boolean',
+        description: 'Resume an interrupted transfer from saved state',
+        default: false,
+    })
+    .option('state-file', {
+        type: 'string',
+        description: 'Path to state file for resume (default: .fscopy-state.json)',
+        default: '.fscopy-state.json',
+    })
     .example('$0 --init config.ini', 'Generate INI config template (default)')
     .example('$0 --init config.json', 'Generate JSON config template')
     .example('$0 -f config.ini', 'Run transfer with config file')
@@ -245,6 +270,7 @@ const argv = yargs(hideBin(process.argv))
     .example('$0 -f config.ini -r users:users_backup', 'Rename collection in destination')
     .example('$0 -f config.ini --id-prefix backup_', 'Add prefix to document IDs')
     .example('$0 -f config.ini --webhook https://hooks.slack.com/...', 'Send notification to Slack')
+    .example('$0 -f config.ini --resume', 'Resume an interrupted transfer')
     .help()
     .parseSync() as CliArgs;
 
@@ -272,6 +298,8 @@ const defaults: Config = {
     idPrefix: null,
     idSuffix: null,
     webhook: null,
+    resume: false,
+    stateFile: '.fscopy-state.json',
 };
 
 const iniTemplate = `; fscopy configuration file
@@ -689,6 +717,8 @@ function mergeConfig(defaultConfig: Config, fileConfig: Partial<Config>, cliArgs
         idPrefix: cliArgs.idPrefix ?? fileConfig.idPrefix ?? defaultConfig.idPrefix,
         idSuffix: cliArgs.idSuffix ?? fileConfig.idSuffix ?? defaultConfig.idSuffix,
         webhook: cliArgs.webhook ?? fileConfig.webhook ?? defaultConfig.webhook,
+        resume: cliArgs.resume ?? defaultConfig.resume,
+        stateFile: cliArgs.stateFile ?? defaultConfig.stateFile,
     };
 }
 
@@ -1177,6 +1207,98 @@ async function sendWebhook(
 }
 
 // =============================================================================
+// State Management (Resume Support)
+// =============================================================================
+
+const STATE_VERSION = 1;
+
+function loadTransferState(stateFile: string): TransferState | null {
+    try {
+        if (!fs.existsSync(stateFile)) {
+            return null;
+        }
+        const content = fs.readFileSync(stateFile, 'utf-8');
+        const state = JSON.parse(content) as TransferState;
+
+        if (state.version !== STATE_VERSION) {
+            console.warn(`⚠️  State file version mismatch (expected ${STATE_VERSION}, got ${state.version})`);
+            return null;
+        }
+
+        return state;
+    } catch (error) {
+        console.error(`⚠️  Failed to load state file: ${(error as Error).message}`);
+        return null;
+    }
+}
+
+function saveTransferState(stateFile: string, state: TransferState): void {
+    state.updatedAt = new Date().toISOString();
+    fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
+}
+
+function deleteTransferState(stateFile: string): void {
+    try {
+        if (fs.existsSync(stateFile)) {
+            fs.unlinkSync(stateFile);
+        }
+    } catch {
+        // Ignore errors when deleting state file
+    }
+}
+
+function createInitialState(config: Config): TransferState {
+    return {
+        version: STATE_VERSION,
+        sourceProject: config.sourceProject!,
+        destProject: config.destProject!,
+        collections: config.collections,
+        startedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        completedDocs: {},
+        stats: {
+            collectionsProcessed: 0,
+            documentsTransferred: 0,
+            documentsDeleted: 0,
+            errors: 0,
+        },
+    };
+}
+
+function validateStateForResume(state: TransferState, config: Config): string[] {
+    const errors: string[] = [];
+
+    if (state.sourceProject !== config.sourceProject) {
+        errors.push(`Source project mismatch: state has "${state.sourceProject}", config has "${config.sourceProject}"`);
+    }
+    if (state.destProject !== config.destProject) {
+        errors.push(`Destination project mismatch: state has "${state.destProject}", config has "${config.destProject}"`);
+    }
+
+    // Check if collections are compatible (state collections should be subset of config)
+    const configCollections = new Set(config.collections);
+    for (const col of state.collections) {
+        if (!configCollections.has(col)) {
+            errors.push(`State contains collection "${col}" not in current config`);
+        }
+    }
+
+    return errors;
+}
+
+function isDocCompleted(state: TransferState, collectionPath: string, docId: string): boolean {
+    const completedInCollection = state.completedDocs[collectionPath];
+    return completedInCollection ? completedInCollection.includes(docId) : false;
+}
+
+function markDocCompleted(state: TransferState, collectionPath: string, docId: string): void {
+    if (!state.completedDocs[collectionPath]) {
+        state.completedDocs[collectionPath] = [];
+    }
+    state.completedDocs[collectionPath].push(docId);
+}
+
+// =============================================================================
 // Transfer Logic
 // =============================================================================
 
@@ -1368,6 +1490,7 @@ interface TransferContext {
     logger: Logger;
     progressBar: cliProgress.SingleBar | null;
     transformFn: TransformFunction | null;
+    state: TransferState | null;
 }
 
 async function transferCollection(
@@ -1375,7 +1498,7 @@ async function transferCollection(
     collectionPath: string,
     depth: number = 0
 ): Promise<void> {
-    const { sourceDb, destDb, config, stats, logger, progressBar, transformFn } = ctx;
+    const { sourceDb, destDb, config, stats, logger, progressBar, transformFn, state } = ctx;
 
     // Get the destination path (may be renamed)
     const destCollectionPath = getDestCollectionPath(collectionPath, config.renameCollection);
@@ -1412,11 +1535,23 @@ async function transferCollection(
     logger.info(`Processing collection: ${collectionPath}`, { documents: snapshot.size });
 
     const docs = snapshot.docs;
+    const batchDocIds: string[] = []; // Track docs in current batch for state saving
+
     for (let i = 0; i < docs.length; i += config.batchSize) {
         const batch = docs.slice(i, i + config.batchSize);
         const destBatch: WriteBatch = destDb.batch();
+        batchDocIds.length = 0; // Clear for new batch
 
         for (const doc of batch) {
+            // Skip if already completed (resume mode)
+            if (state && isDocCompleted(state, collectionPath, doc.id)) {
+                if (progressBar) {
+                    progressBar.increment();
+                }
+                stats.documentsTransferred++;
+                continue;
+            }
+
             // Get destination document ID (with optional prefix/suffix)
             const destDocId = getDestDocId(doc.id, config.idPrefix, config.idSuffix);
             const destDocRef = destDb.collection(destCollectionPath).doc(destDocId);
@@ -1437,6 +1572,8 @@ async function transferCollection(
                     if (progressBar) {
                         progressBar.increment();
                     }
+                    // Mark as completed even if skipped
+                    batchDocIds.push(doc.id);
                     continue;
                 }
                 docData = transformed;
@@ -1451,6 +1588,7 @@ async function transferCollection(
                 }
             }
 
+            batchDocIds.push(doc.id);
             stats.documentsTransferred++;
             if (progressBar) {
                 progressBar.increment();
@@ -1491,6 +1629,15 @@ async function transferCollection(
                     logger.error(`Retry commit ${attempt}/${max}`, { error: err.message, delay });
                 },
             });
+
+            // Save state after successful batch commit (for resume support)
+            if (state && batchDocIds.length > 0) {
+                for (const docId of batchDocIds) {
+                    markDocCompleted(state, collectionPath, docId);
+                }
+                state.stats = { ...stats };
+                saveTransferState(config.stateFile, state);
+            }
         }
     }
 }
@@ -1583,6 +1730,36 @@ try {
     logger.init();
     logger.info('Transfer started', { config: config as unknown as Record<string, unknown> });
 
+    // Handle resume mode
+    let transferState: TransferState | null = null;
+    if (config.resume) {
+        const existingState = loadTransferState(config.stateFile);
+        if (!existingState) {
+            console.error(`\n❌ No state file found at ${config.stateFile}`);
+            console.error('   Cannot resume without a saved state. Run without --resume to start fresh.');
+            process.exit(1);
+        }
+
+        const stateErrors = validateStateForResume(existingState, config);
+        if (stateErrors.length > 0) {
+            console.error('\n❌ Cannot resume: state file incompatible with current config:');
+            stateErrors.forEach((err) => console.error(`   - ${err}`));
+            process.exit(1);
+        }
+
+        transferState = existingState;
+        const completedCount = Object.values(transferState.completedDocs).reduce((sum, ids) => sum + ids.length, 0);
+        console.log(`\n🔄 Resuming transfer from ${config.stateFile}`);
+        console.log(`   Started: ${transferState.startedAt}`);
+        console.log(`   Previously completed: ${completedCount} documents`);
+        stats = { ...transferState.stats };
+    } else if (!config.dryRun) {
+        // Create new state for tracking (only in non-dry-run mode)
+        transferState = createInitialState(config);
+        saveTransferState(config.stateFile, transferState);
+        console.log(`\n💾 State will be saved to ${config.stateFile} (use --resume to continue if interrupted)`);
+    }
+
     // Load transform function if specified
     let transformFn: TransformFunction | null = null;
     if (config.transform) {
@@ -1596,12 +1773,14 @@ try {
 
     const { sourceDb, destDb } = initializeFirebase(config);
 
-    stats = {
-        collectionsProcessed: 0,
-        documentsTransferred: 0,
-        documentsDeleted: 0,
-        errors: 0,
-    };
+    if (!config.resume) {
+        stats = {
+            collectionsProcessed: 0,
+            documentsTransferred: 0,
+            documentsDeleted: 0,
+            errors: 0,
+        };
+    }
 
     // Count total documents for progress bar
     let totalDocs = 0;
@@ -1642,7 +1821,7 @@ try {
         console.log(`   Deleted ${stats.documentsDeleted} documents\n`);
     }
 
-    const ctx: TransferContext = { sourceDb, destDb, config, stats, logger, progressBar, transformFn };
+    const ctx: TransferContext = { sourceDb, destDb, config, stats, logger, progressBar, transformFn, state: transferState };
 
     // Transfer collections (with optional parallelism)
     if (config.parallel > 1) {
@@ -1707,6 +1886,8 @@ try {
         console.log('   Run with --dry-run=false to perform the transfer');
     } else {
         console.log('\n✓ Transfer completed successfully');
+        // Delete state file on successful completion
+        deleteTransferState(config.stateFile);
     }
     console.log('='.repeat(60) + '\n');
 

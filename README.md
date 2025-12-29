@@ -21,6 +21,7 @@ Transfer documents between Firebase projects with support for subcollections, fi
 - **Collection renaming** - Rename collections in destination for backups or migrations
 - **ID modification** - Add prefix or suffix to document IDs to avoid conflicts
 - **Webhook notifications** - Send Slack, Discord, or custom webhooks on completion
+- **Resume transfers** - Continue interrupted transfers from saved state
 - **Interactive mode** - Guided setup with prompts for project and collection selection
 - **Progress bar** - Real-time progress with ETA
 - **Automatic retry** - Exponential backoff on network errors
@@ -144,6 +145,9 @@ fscopy -f config.ini --id-suffix _archived
 
 # Send notification to Slack/Discord
 fscopy -f config.ini --webhook https://hooks.slack.com/services/...
+
+# Resume an interrupted transfer
+fscopy -f config.ini --resume
 ```
 
 ### Collection Renaming
@@ -233,6 +237,30 @@ The webhook receives a POST request with:
 - `error` - Error message (if failed)
 
 Slack and Discord webhooks are automatically formatted with rich messages.
+
+### Resume Interrupted Transfers
+
+Large migrations can be resumed if interrupted:
+
+```bash
+# Start a transfer (state is saved automatically to .fscopy-state.json)
+fscopy -f config.ini -d false
+
+# If interrupted (Ctrl+C, network error, etc.), resume from where it left off
+fscopy -f config.ini --resume
+
+# Use a custom state file
+fscopy -f config.ini --state-file ./my-transfer.state.json
+fscopy -f config.ini --resume --state-file ./my-transfer.state.json
+```
+
+The state file tracks:
+
+- Completed document IDs per collection
+- Transfer statistics
+- Source/destination project validation
+
+State files are automatically deleted on successful completion.
 
 ## Configuration
 
@@ -324,6 +352,8 @@ fscopy --init config.json
 | `--id-prefix`              |       | string  |         | Add prefix to document IDs        |
 | `--id-suffix`              |       | string  |         | Add suffix to document IDs        |
 | `--webhook`                |       | string  |         | Webhook URL for notifications     |
+| `--resume`                 |       | boolean | `false` | Resume from saved state           |
+| `--state-file`             |       | string  | `.fscopy-state.json` | State file path      |
 
 ## How It Works
 

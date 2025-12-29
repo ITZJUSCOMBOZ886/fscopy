@@ -52,6 +52,8 @@ fscopy -f config.ini -t ./transform.ts # Transform docs during transfer
 fscopy -f config.ini -r users:users_backup # Rename collection in destination
 fscopy -f config.ini --id-prefix backup_  # Add prefix to document IDs
 fscopy -f config.ini --webhook https://hooks.slack.com/... # Webhook notification
+fscopy -f config.ini --resume                            # Resume interrupted transfer
+fscopy -f config.ini --state-file ./custom.state.json    # Custom state file path
 
 # Local development:
 bun start -- -f config.ini              # Run locally
@@ -87,6 +89,8 @@ Single-file TypeScript CLI (`src/cli.ts`) with shebang `#!/usr/bin/env bun`.
 - `getDestCollectionPath()` - Resolves renamed destination collection path
 - `getDestDocId()` - Applies prefix/suffix to document IDs
 - `sendWebhook()` - Sends POST notification to Slack, Discord, or custom URL
+- `loadTransferState()` / `saveTransferState()` - State persistence for resume support
+- `isDocCompleted()` / `markDocCompleted()` - Track completed documents
 
 **Tests:**
 
@@ -122,3 +126,5 @@ INI format uses `[projects]` section for source/dest and `[transfer]` section fo
 | ID prefix      | `--id-prefix`      | `idPrefix` ([options])     | `idPrefix`              | null     |
 | ID suffix      | `--id-suffix`      | `idSuffix` ([options])     | `idSuffix`              | null     |
 | Webhook        | `--webhook`        | `webhook` ([options])      | `webhook`               | null     |
+| Resume         | `--resume`         | -                          | -                       | false    |
+| State file     | `--state-file`     | -                          | -                       | .fscopy-state.json |

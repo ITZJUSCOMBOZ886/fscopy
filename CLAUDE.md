@@ -45,6 +45,7 @@ fscopy -f config.ini --where "active == true"  # Filter docs
 fscopy -f config.ini --exclude logs cache  # Exclude subcollections
 fscopy -f config.ini --merge  # Merge instead of overwrite
 fscopy -f config.ini --parallel 3  # Parallel transfers
+fscopy -f config.ini --clear  # Clear destination before transfer
 
 # Local development:
 bun start -- -f config.ini              # Run locally
@@ -72,6 +73,7 @@ Single-file TypeScript CLI (`src/cli.ts`) with shebang `#!/usr/bin/env bun`.
 
 - `countDocuments()` - Counts total docs for progress bar
 - `initializeFirebase()` - Creates two Firebase Admin apps (source/dest)
+- `clearCollection()` - Deletes all docs from destination (when --clear is used)
 - `transferCollection()` - Recursive function with retry handling
 - `getSubcollections()` - Discovers nested collections via `listCollections()`
 
@@ -101,3 +103,4 @@ INI format uses `[projects]` section for source/dest and `[transfer]` section fo
 | Exclude        | `-x`               | `exclude` ([options])      | `exclude`               | []       |
 | Merge mode     | `-m`               | `merge` ([options])        | `merge`                 | false    |
 | Parallel       | `-p`               | `parallel` ([options])     | `parallel`              | 1        |
+| Clear dest     | `--clear`          | `clear` ([options])        | `clear`                 | false    |

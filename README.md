@@ -15,6 +15,7 @@ Transfer documents between Firebase projects with support for subcollections, fi
 - **Exclude patterns** - Skip subcollections by name or glob pattern
 - **Merge mode** - Update existing documents instead of overwriting
 - **Parallel transfers** - Copy multiple collections simultaneously
+- **Clear destination** - Optionally delete destination data before transfer
 - **Progress bar** - Real-time progress with ETA
 - **Automatic retry** - Exponential backoff on network errors
 - **Dry run mode** - Preview changes before applying (enabled by default)
@@ -41,13 +42,8 @@ npm install -g fscopy
 ### Prerequisites
 
 1. [Bun](https://bun.sh) or Node.js 18+
-2. Google Cloud authentication:
-
-```bash
-gcloud auth application-default login
-```
-
-3. Firestore read access on source project, write access on destination
+1. Google Cloud authentication: `gcloud auth application-default login`
+1. Firestore read access on source project, write access on destination
 
 ## Quick Start
 
@@ -118,6 +114,9 @@ fscopy -f config.ini --limit 100
 
 # Quiet mode (no progress bar)
 fscopy -f config.ini -q
+
+# Clear destination before transfer (DESTRUCTIVE)
+fscopy -f config.ini --clear
 ```
 
 ## Configuration
@@ -145,6 +144,7 @@ limit = 0
 ; exclude = logs, cache, temp/*
 merge = false
 parallel = 1
+clear = false
 ```
 
 ### JSON Format
@@ -165,31 +165,33 @@ fscopy --init config.json
   "where": ["status == active"],
   "exclude": ["logs", "cache"],
   "merge": false,
-  "parallel": 1
+  "parallel": 1,
+  "clear": false
 }
 ```
 
 ## CLI Reference
 
 | Option | Alias | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--init` | | string | | Generate config template |
-| `--config` | `-f` | string | | Path to config file |
-| `--source-project` | | string | | Source Firebase project |
-| `--dest-project` | | string | | Destination project |
-| `--collections` | `-c` | array | | Collections to transfer |
+| ------ | ----- | ---- | ------- | ----------- |
+| `--init` |  | string |  | Generate config template |
+| `--config` | `-f` | string |  | Path to config file |
+| `--source-project` |  | string |  | Source Firebase project |
+| `--dest-project` |  | string |  | Destination project |
+| `--collections` | `-c` | array |  | Collections to transfer |
 | `--include-subcollections` | `-s` | boolean | `false` | Include subcollections |
-| `--where` | `-w` | array | | Filter documents |
-| `--exclude` | `-x` | array | | Exclude subcollections |
+| `--where` | `-w` | array |  | Filter documents |
+| `--exclude` | `-x` | array |  | Exclude subcollections |
 | `--merge` | `-m` | boolean | `false` | Merge instead of overwrite |
 | `--parallel` | `-p` | number | `1` | Parallel transfers |
 | `--dry-run` | `-d` | boolean | `true` | Preview without writing |
 | `--batch-size` | `-b` | number | `500` | Documents per batch |
 | `--limit` | `-l` | number | `0` | Limit docs (0 = no limit) |
-| `--retries` | | number | `3` | Retries on error |
-| `--log` | | string | | Log file path |
+| `--retries` |  | number | `3` | Retries on error |
+| `--log` |  | string |  | Log file path |
 | `--quiet` | `-q` | boolean | `false` | No progress bar |
 | `--yes` | `-y` | boolean | `false` | Skip confirmation |
+| `--clear` |  | boolean | `false` | Clear destination before transfer |
 
 ## How It Works
 
@@ -206,6 +208,7 @@ fscopy --init config.json
 - **Where filters apply to root only** - Subcollections are copied in full
 - **Exclude patterns support globs** - e.g., `temp/*`, `*/logs`
 - **Progress bar shows ETA** - Based on documents processed
+- **Clear is destructive** - `--clear` deletes all destination docs before transfer
 
 ## Development
 

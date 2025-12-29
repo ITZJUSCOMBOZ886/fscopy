@@ -33,11 +33,13 @@ interface Config {
     exclude: string[];
     merge: boolean;
     parallel: number;
+    clear: boolean;
 }
 
 interface Stats {
     collectionsProcessed: number;
     documentsTransferred: number;
+    documentsDeleted: number;
     errors: number;
 }
 
@@ -73,6 +75,7 @@ interface CliArgs {
     exclude?: string[];
     merge?: boolean;
     parallel?: number;
+    clear?: boolean;
 }
 
 // =============================================================================
@@ -169,6 +172,11 @@ const argv = yargs(hideBin(process.argv))
         description: 'Number of parallel collection transfers (default: 1)',
         default: 1,
     })
+    .option('clear', {
+        type: 'boolean',
+        description: 'Clear destination collections before transfer (DESTRUCTIVE)',
+        default: false,
+    })
     .example('$0 --init config.ini', 'Generate INI config template (default)')
     .example('$0 --init config.json', 'Generate JSON config template')
     .example('$0 -f config.ini', 'Run transfer with config file')
@@ -178,6 +186,7 @@ const argv = yargs(hideBin(process.argv))
     .example('$0 -f config.ini --exclude "logs" --exclude "cache"', 'Exclude subcollections')
     .example('$0 -f config.ini --merge', 'Merge instead of overwrite')
     .example('$0 -f config.ini --parallel 3', 'Transfer 3 collections in parallel')
+    .example('$0 -f config.ini --clear', 'Clear destination before transfer')
     .help()
     .parseSync() as CliArgs;
 
@@ -198,6 +207,7 @@ const defaults: Config = {
     exclude: [],
     merge: false,
     parallel: 1,
+    clear: false,
 };
 
 const iniTemplate = `; fscopy configuration file
@@ -223,6 +233,8 @@ limit = 0
 merge = false
 ; Number of parallel collection transfers
 parallel = 1
+; Clear destination collections before transfer (DESTRUCTIVE)
+clear = false
 `;
 
 const jsonTemplate = {
@@ -237,6 +249,7 @@ const jsonTemplate = {
     exclude: [],
     merge: false,
     parallel: 1,
+    clear: false,
 };
 
 // =============================================================================
@@ -244,9 +257,9 @@ const jsonTemplate = {
 // =============================================================================
 
 class Logger {
-    private logPath: string | undefined;
-    private entries: LogEntry[] = [];
-    private startTime: Date;
+    private readonly logPath: string | undefined;
+    private readonly entries: LogEntry[] = [];
+    private readonly startTime: Date;
 
     constructor(logPath?: string) {
         this.logPath = logPath;
@@ -292,7 +305,11 @@ class Logger {
 
     summary(stats: Stats, duration: string): void {
         if (this.logPath) {
-            const summary = `\n# Summary\n# Collections: ${stats.collectionsProcessed}\n# Documents: ${stats.documentsTransferred}\n# Errors: ${stats.errors}\n# Duration: ${duration}s\n`;
+            let summary = `\n# Summary\n# Collections: ${stats.collectionsProcessed}\n`;
+            if (stats.documentsDeleted > 0) {
+                summary += `# Deleted: ${stats.documentsDeleted}\n`;
+            }
+            summary += `# Transferred: ${stats.documentsTransferred}\n# Errors: ${stats.errors}\n# Duration: ${duration}s\n`;
             fs.appendFileSync(this.logPath, summary);
         }
     }
@@ -343,12 +360,10 @@ function parseBoolean(val: unknown): boolean {
     return false;
 }
 
-const VALID_OPERATORS: FirebaseFirestore.WhereFilterOp[] = ['==', '!=', '<', '>', '<=', '>='];
-
 function parseWhereFilter(filterStr: string): WhereFilter | null {
     // Parse "field operator value" format
     const operatorRegex = /(==|!=|<=|>=|<|>)/;
-    const match = filterStr.match(operatorRegex);
+    const match = new RegExp(operatorRegex).exec(filterStr);
 
     if (!match) {
         console.warn(`⚠️  Invalid where filter: "${filterStr}" (missing operator)`);
@@ -374,11 +389,11 @@ function parseWhereFilter(filterStr: string): WhereFilter | null {
         value = false;
     } else if (rawValue === 'null') {
         value = null as unknown as string; // Firestore supports null
-    } else if (!isNaN(Number(rawValue)) && rawValue !== '') {
+    } else if (!Number.isNaN(Number(rawValue)) && rawValue !== '') {
         value = Number(rawValue);
     } else {
         // Remove quotes if present
-        value = rawValue.replace(/^["']|["']$/g, '');
+        value = rawValue.replaceAll(/(?:^["'])|(?:["']$)/g, '');
     }
 
     return { field, operator, value };
@@ -401,11 +416,11 @@ function matchesExcludePattern(path: string, patterns: string[]): boolean {
     for (const pattern of patterns) {
         if (pattern.includes('*')) {
             // Convert glob pattern to regex
-            const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+            const regex = new RegExp('^' + pattern.replaceAll('*', '.*') + '$');
             if (regex.test(path)) return true;
-        } else {
+        } else if (path === pattern || path.endsWith('/' + pattern)) {
             // Exact match or ends with pattern
-            if (path === pattern || path.endsWith('/' + pattern)) return true;
+            return true;
         }
     }
     return false;
@@ -426,6 +441,7 @@ function parseIniConfig(content: string): Partial<Config> {
             exclude?: string;
             merge?: string | boolean;
             parallel?: string;
+            clear?: string | boolean;
         };
     };
 
@@ -454,6 +470,7 @@ function parseIniConfig(content: string): Partial<Config> {
         exclude: parseStringList(parsed.options?.exclude),
         merge: parseBoolean(parsed.options?.merge),
         parallel: Number.parseInt(parsed.options?.parallel ?? '', 10) || 1,
+        clear: parseBoolean(parsed.options?.clear),
     };
 }
 
@@ -470,6 +487,7 @@ function parseJsonConfig(content: string): Partial<Config> {
         exclude?: string[];
         merge?: boolean;
         parallel?: number;
+        clear?: boolean;
     };
 
     return {
@@ -484,6 +502,7 @@ function parseJsonConfig(content: string): Partial<Config> {
         exclude: config.exclude,
         merge: config.merge,
         parallel: config.parallel,
+        clear: config.clear,
     };
 }
 
@@ -505,13 +524,10 @@ function loadConfigFile(configPath?: string): Partial<Config> {
 
 function mergeConfig(defaultConfig: Config, fileConfig: Partial<Config>, cliArgs: CliArgs): Config {
     // Parse CLI where filters
-    const cliWhereFilters = parseWhereFilters(cliArgs.where as string[] | undefined);
+    const cliWhereFilters = parseWhereFilters(cliArgs.where);
 
     return {
-        collections:
-            (cliArgs.collections as string[] | undefined) ??
-            fileConfig.collections ??
-            defaultConfig.collections,
+        collections: cliArgs.collections ?? fileConfig.collections ?? defaultConfig.collections,
         includeSubcollections:
             cliArgs.includeSubcollections ??
             fileConfig.includeSubcollections ??
@@ -526,13 +542,11 @@ function mergeConfig(defaultConfig: Config, fileConfig: Partial<Config>, cliArgs
         where:
             cliWhereFilters.length > 0
                 ? cliWhereFilters
-                : fileConfig.where ?? defaultConfig.where,
-        exclude:
-            (cliArgs.exclude as string[] | undefined) ??
-            fileConfig.exclude ??
-            defaultConfig.exclude,
+                : (fileConfig.where ?? defaultConfig.where),
+        exclude: cliArgs.exclude ?? fileConfig.exclude ?? defaultConfig.exclude,
         merge: cliArgs.merge ?? fileConfig.merge ?? defaultConfig.merge,
         parallel: cliArgs.parallel ?? fileConfig.parallel ?? defaultConfig.parallel,
+        clear: cliArgs.clear ?? fileConfig.clear ?? defaultConfig.clear,
     };
 }
 
@@ -616,6 +630,9 @@ function displayConfig(config: Config): void {
     if (config.parallel > 1) {
         console.log(`  ⚡ Parallel transfers:   ${config.parallel} collections`);
     }
+    if (config.clear) {
+        console.log(`  🗑️  Clear destination:    enabled (DESTRUCTIVE)`);
+    }
 
     console.log('');
 
@@ -687,6 +704,65 @@ async function getSubcollections(docRef: DocumentReference): Promise<string[]> {
 // =============================================================================
 // Transfer Logic
 // =============================================================================
+
+async function clearCollection(
+    db: Firestore,
+    collectionPath: string,
+    config: Config,
+    logger: Logger,
+    includeSubcollections: boolean
+): Promise<number> {
+    let deletedCount = 0;
+    const collectionRef = db.collection(collectionPath);
+    const snapshot = await collectionRef.get();
+
+    if (snapshot.empty) {
+        return 0;
+    }
+
+    // Delete subcollections first if enabled
+    if (includeSubcollections) {
+        for (const doc of snapshot.docs) {
+            const subcollections = await getSubcollections(doc.ref);
+            for (const subId of subcollections) {
+                // Check exclude patterns
+                if (matchesExcludePattern(subId, config.exclude)) {
+                    continue;
+                }
+                const subPath = `${collectionPath}/${doc.id}/${subId}`;
+                deletedCount += await clearCollection(db, subPath, config, logger, true);
+            }
+        }
+    }
+
+    // Delete documents in batches
+    const docs = snapshot.docs;
+    for (let i = 0; i < docs.length; i += config.batchSize) {
+        const batch = docs.slice(i, i + config.batchSize);
+        const writeBatch = db.batch();
+
+        for (const doc of batch) {
+            writeBatch.delete(doc.ref);
+            deletedCount++;
+        }
+
+        if (!config.dryRun) {
+            await withRetry(() => writeBatch.commit(), {
+                retries: config.retries,
+                onRetry: (attempt, max, err, delay) => {
+                    logger.error(`Retry delete ${attempt}/${max} for ${collectionPath}`, {
+                        error: err.message,
+                        delay,
+                    });
+                },
+            });
+        }
+
+        logger.info(`Deleted ${batch.length} documents from ${collectionPath}`);
+    }
+
+    return deletedCount;
+}
 
 async function countDocuments(
     sourceDb: Firestore,
@@ -914,6 +990,7 @@ try {
     const stats: Stats = {
         collectionsProcessed: 0,
         documentsTransferred: 0,
+        documentsDeleted: 0,
         errors: 0,
     };
 
@@ -937,6 +1014,22 @@ try {
             });
             progressBar.start(totalDocs, 0);
         }
+    }
+
+    // Clear destination collections if enabled
+    if (config.clear) {
+        console.log('🗑️  Clearing destination collections...');
+        for (const collection of config.collections) {
+            const deleted = await clearCollection(
+                destDb,
+                collection,
+                config,
+                logger,
+                config.includeSubcollections
+            );
+            stats.documentsDeleted += deleted;
+        }
+        console.log(`   Deleted ${stats.documentsDeleted} documents\n`);
     }
 
     const ctx: TransferContext = { sourceDb, destDb, config, stats, logger, progressBar };
@@ -968,6 +1061,9 @@ try {
     console.log('📊 TRANSFER SUMMARY');
     console.log('='.repeat(60));
     console.log(`Collections processed: ${stats.collectionsProcessed}`);
+    if (stats.documentsDeleted > 0) {
+        console.log(`Documents deleted:     ${stats.documentsDeleted}`);
+    }
     console.log(`Documents transferred: ${stats.documentsTransferred}`);
     console.log(`Errors: ${stats.errors}`);
     console.log(`Duration: ${duration}s`);

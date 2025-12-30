@@ -7,7 +7,7 @@ import {
     sendWebhook,
     type WebhookPayload,
 } from '../webhook/index.js';
-import { Logger } from '../utils/logger.js';
+import { Output } from '../utils/output.js';
 
 // Helper to create a test payload
 function createPayload(overrides: Partial<WebhookPayload> = {}): WebhookPayload {
@@ -219,10 +219,10 @@ describe('sendWebhook', () => {
     });
 
     test('sends POST request to webhook URL', async () => {
-        const logger = new Logger();
+        const output = new Output();
         const payload = createPayload();
 
-        await sendWebhook('https://example.com/webhook', payload, logger);
+        await sendWebhook('https://example.com/webhook', payload, output);
 
         expect(mockFetch).toHaveBeenCalledTimes(1);
         const [url, options] = mockFetch.mock.calls[0];
@@ -232,10 +232,10 @@ describe('sendWebhook', () => {
     });
 
     test('uses Slack format for Slack URLs', async () => {
-        const logger = new Logger();
+        const output = new Output();
         const payload = createPayload();
 
-        await sendWebhook('https://hooks.slack.com/services/xxx', payload, logger);
+        await sendWebhook('https://hooks.slack.com/services/xxx', payload, output);
 
         const [, options] = mockFetch.mock.calls[0];
         const body = JSON.parse(options.body);
@@ -243,10 +243,10 @@ describe('sendWebhook', () => {
     });
 
     test('uses Discord format for Discord URLs', async () => {
-        const logger = new Logger();
+        const output = new Output();
         const payload = createPayload();
 
-        await sendWebhook('https://discord.com/api/webhooks/123/abc', payload, logger);
+        await sendWebhook('https://discord.com/api/webhooks/123/abc', payload, output);
 
         const [, options] = mockFetch.mock.calls[0];
         const body = JSON.parse(options.body);
@@ -254,10 +254,10 @@ describe('sendWebhook', () => {
     });
 
     test('uses raw payload for custom URLs', async () => {
-        const logger = new Logger();
+        const output = new Output();
         const payload = createPayload();
 
-        await sendWebhook('https://example.com/webhook', payload, logger);
+        await sendWebhook('https://example.com/webhook', payload, output);
 
         const [, options] = mockFetch.mock.calls[0];
         const body = JSON.parse(options.body);
@@ -267,11 +267,11 @@ describe('sendWebhook', () => {
 
     test('handles fetch errors gracefully', async () => {
         globalThis.fetch = mock(() => Promise.reject(new Error('Network error'))) as unknown as typeof fetch;
-        const logger = new Logger();
+        const output = new Output();
         const payload = createPayload();
 
         // Should not throw
-        await sendWebhook('https://example.com/webhook', payload, logger);
+        await sendWebhook('https://example.com/webhook', payload, output);
     });
 
     test('handles non-ok response gracefully', async () => {
@@ -282,10 +282,10 @@ describe('sendWebhook', () => {
                 text: () => Promise.resolve('Internal Server Error'),
             } as Response)
         ) as unknown as typeof fetch;
-        const logger = new Logger();
+        const output = new Output();
         const payload = createPayload();
 
         // Should not throw
-        await sendWebhook('https://example.com/webhook', payload, logger);
+        await sendWebhook('https://example.com/webhook', payload, output);
     });
 });

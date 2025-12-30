@@ -1,6 +1,6 @@
 import type { Firestore, QueryDocumentSnapshot } from 'firebase-admin/firestore';
 import type { Config } from '../types.js';
-import type { Logger } from '../utils/logger.js';
+import type { Output } from '../utils/output.js';
 import { withRetry } from '../utils/retry.js';
 import { matchesExcludePattern } from '../utils/patterns.js';
 import { getSubcollections, getDestCollectionPath } from './helpers.js';
@@ -10,7 +10,7 @@ async function clearDocSubcollections(
     doc: QueryDocumentSnapshot,
     collectionPath: string,
     config: Config,
-    logger: Logger
+    output: Output
 ): Promise<number> {
     let deletedCount = 0;
     const subcollections = await getSubcollections(doc.ref);
@@ -19,7 +19,7 @@ async function clearDocSubcollections(
         if (matchesExcludePattern(subId, config.exclude)) continue;
 
         const subPath = `${collectionPath}/${doc.id}/${subId}`;
-        deletedCount += await clearCollection(db, subPath, config, logger, true);
+        deletedCount += await clearCollection(db, subPath, config, output, true);
     }
 
     return deletedCount;
@@ -30,7 +30,7 @@ async function deleteBatch(
     batch: QueryDocumentSnapshot[],
     collectionPath: string,
     config: Config,
-    logger: Logger
+    output: Output
 ): Promise<number> {
     const writeBatch = db.batch();
 
@@ -42,7 +42,7 @@ async function deleteBatch(
         await withRetry(() => writeBatch.commit(), {
             retries: config.retries,
             onRetry: (attempt, max, err, delay) => {
-                logger.error(`Retry delete ${attempt}/${max} for ${collectionPath}`, {
+                output.logError(`Retry delete ${attempt}/${max} for ${collectionPath}`, {
                     error: err.message,
                     delay,
                 });
@@ -50,7 +50,7 @@ async function deleteBatch(
         });
     }
 
-    logger.info(`Deleted ${batch.length} documents from ${collectionPath}`);
+    output.logInfo(`Deleted ${batch.length} documents from ${collectionPath}`);
     return batch.length;
 }
 
@@ -58,7 +58,7 @@ export async function clearCollection(
     db: Firestore,
     collectionPath: string,
     config: Config,
-    logger: Logger,
+    output: Output,
     includeSubcollections: boolean
 ): Promise<number> {
     const snapshot = await db.collection(collectionPath).get();
@@ -69,14 +69,14 @@ export async function clearCollection(
     // Delete subcollections first if enabled
     if (includeSubcollections) {
         for (const doc of snapshot.docs) {
-            deletedCount += await clearDocSubcollections(db, doc, collectionPath, config, logger);
+            deletedCount += await clearDocSubcollections(db, doc, collectionPath, config, output);
         }
     }
 
     // Delete documents in batches
     for (let i = 0; i < snapshot.docs.length; i += config.batchSize) {
         const batch = snapshot.docs.slice(i, i + config.batchSize);
-        deletedCount += await deleteBatch(db, batch, collectionPath, config, logger);
+        deletedCount += await deleteBatch(db, batch, collectionPath, config, output);
     }
 
     return deletedCount;
@@ -87,7 +87,7 @@ async function clearOrphanSubcollections(
     doc: QueryDocumentSnapshot,
     destCollectionPath: string,
     config: Config,
-    logger: Logger
+    output: Output
 ): Promise<number> {
     let deletedCount = 0;
     const subcollections = await getSubcollections(doc.ref);
@@ -96,7 +96,7 @@ async function clearOrphanSubcollections(
         if (matchesExcludePattern(subId, config.exclude)) continue;
 
         const subPath = `${destCollectionPath}/${doc.id}/${subId}`;
-        deletedCount += await clearCollection(destDb, subPath, config, logger, true);
+        deletedCount += await clearCollection(destDb, subPath, config, output, true);
     }
 
     return deletedCount;
@@ -107,14 +107,14 @@ async function deleteOrphanBatch(
     batch: QueryDocumentSnapshot[],
     destCollectionPath: string,
     config: Config,
-    logger: Logger
+    output: Output
 ): Promise<number> {
     let deletedCount = 0;
     const writeBatch = destDb.batch();
 
     for (const doc of batch) {
         if (config.includeSubcollections) {
-            deletedCount += await clearOrphanSubcollections(destDb, doc, destCollectionPath, config, logger);
+            deletedCount += await clearOrphanSubcollections(destDb, doc, destCollectionPath, config, output);
         }
         writeBatch.delete(doc.ref);
         deletedCount++;
@@ -124,7 +124,7 @@ async function deleteOrphanBatch(
         await withRetry(() => writeBatch.commit(), {
             retries: config.retries,
             onRetry: (attempt, max, err, delay) => {
-                logger.error(`Retry delete orphans ${attempt}/${max} for ${destCollectionPath}`, {
+                output.logError(`Retry delete orphans ${attempt}/${max} for ${destCollectionPath}`, {
                     error: err.message,
                     delay,
                 });
@@ -132,7 +132,7 @@ async function deleteOrphanBatch(
         });
     }
 
-    logger.info(`Deleted ${batch.length} orphan documents from ${destCollectionPath}`);
+    output.logInfo(`Deleted ${batch.length} orphan documents from ${destCollectionPath}`);
     return deletedCount;
 }
 
@@ -142,7 +142,7 @@ async function processSubcollectionOrphans(
     sourceSnapshot: FirebaseFirestore.QuerySnapshot,
     sourceCollectionPath: string,
     config: Config,
-    logger: Logger
+    output: Output
 ): Promise<number> {
     let deletedCount = 0;
 
@@ -152,7 +152,7 @@ async function processSubcollectionOrphans(
             if (matchesExcludePattern(subId, config.exclude)) continue;
 
             const subPath = `${sourceCollectionPath}/${sourceDoc.id}/${subId}`;
-            deletedCount += await deleteOrphanDocuments(sourceDb, destDb, subPath, config, logger);
+            deletedCount += await deleteOrphanDocuments(sourceDb, destDb, subPath, config, output);
         }
     }
 
@@ -164,7 +164,7 @@ export async function deleteOrphanDocuments(
     destDb: Firestore,
     sourceCollectionPath: string,
     config: Config,
-    logger: Logger
+    output: Output
 ): Promise<number> {
     const destCollectionPath = getDestCollectionPath(sourceCollectionPath, config.renameCollection);
 
@@ -177,17 +177,17 @@ export async function deleteOrphanDocuments(
     let deletedCount = 0;
 
     if (orphanDocs.length > 0) {
-        logger.info(`Found ${orphanDocs.length} orphan documents in ${destCollectionPath}`);
+        output.logInfo(`Found ${orphanDocs.length} orphan documents in ${destCollectionPath}`);
 
         for (let i = 0; i < orphanDocs.length; i += config.batchSize) {
             const batch = orphanDocs.slice(i, i + config.batchSize);
-            deletedCount += await deleteOrphanBatch(destDb, batch, destCollectionPath, config, logger);
+            deletedCount += await deleteOrphanBatch(destDb, batch, destCollectionPath, config, output);
         }
     }
 
     if (config.includeSubcollections) {
         deletedCount += await processSubcollectionOrphans(
-            sourceDb, destDb, sourceSnapshot, sourceCollectionPath, config, logger
+            sourceDb, destDb, sourceSnapshot, sourceCollectionPath, config, output
         );
     }
 

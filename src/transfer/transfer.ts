@@ -1,7 +1,7 @@
 import type { Firestore, WriteBatch, Query, QueryDocumentSnapshot } from 'firebase-admin/firestore';
 import type cliProgress from 'cli-progress';
 import type { Config, Stats, TransferState, TransformFunction } from '../types.js';
-import type { Logger } from '../utils/logger.js';
+import type { Output } from '../utils/output.js';
 import type { RateLimiter } from '../utils/rate-limiter.js';
 import { withRetry } from '../utils/retry.js';
 import { matchesExcludePattern } from '../utils/patterns.js';
@@ -14,7 +14,7 @@ export interface TransferContext {
     destDb: Firestore;
     config: Config;
     stats: Stats;
-    logger: Logger;
+    output: Output;
     progressBar: cliProgress.SingleBar | null;
     transformFn: TransformFunction | null;
     state: TransferState | null;
@@ -53,7 +53,7 @@ function applyTransform(
     doc: QueryDocumentSnapshot,
     collectionPath: string,
     transformFn: TransformFunction,
-    logger: Logger,
+    output: Output,
     stats: Stats
 ): { success: boolean; data: Record<string, unknown> | null; markCompleted: boolean } {
     try {
@@ -63,7 +63,7 @@ function applyTransform(
         });
 
         if (transformed === null) {
-            logger.info('Skipped document (transform returned null)', {
+            output.logInfo('Skipped document (transform returned null)', {
                 collection: collectionPath,
                 docId: doc.id,
             });
@@ -73,7 +73,7 @@ function applyTransform(
         return { success: true, data: transformed, markCompleted: false };
     } catch (transformError) {
         const errMsg = transformError instanceof Error ? transformError.message : String(transformError);
-        logger.error(`Transform failed for document ${doc.id}`, {
+        output.logError(`Transform failed for document ${doc.id}`, {
             collection: collectionPath,
             error: errMsg,
         });
@@ -89,7 +89,7 @@ function checkDocumentSize(
     destCollectionPath: string,
     destDocId: string,
     config: Config,
-    logger: Logger
+    output: Output
 ): { valid: boolean; markCompleted: boolean } {
     const docSize = estimateDocumentSize(docData, `${destCollectionPath}/${destDocId}`);
 
@@ -99,7 +99,7 @@ function checkDocumentSize(
 
     const sizeStr = formatBytes(docSize);
     if (config.skipOversized) {
-        logger.info(`Skipped oversized document (${sizeStr})`, {
+        output.logInfo(`Skipped oversized document (${sizeStr})`, {
             collection: collectionPath,
             docId: doc.id,
         });
@@ -121,7 +121,7 @@ async function processSubcollections(
 
     for (const subcollectionId of subcollections) {
         if (matchesExcludePattern(subcollectionId, ctx.config.exclude)) {
-            ctx.logger.info(`Skipping excluded subcollection: ${subcollectionId}`);
+            ctx.output.logInfo(`Skipping excluded subcollection: ${subcollectionId}`);
             continue;
         }
 
@@ -137,7 +137,7 @@ function processDocument(
     collectionPath: string,
     destCollectionPath: string
 ): DocProcessResult {
-    const { config, logger, state, stats, transformFn } = ctx;
+    const { config, output, state, stats, transformFn } = ctx;
 
     // Skip if already completed (resume mode)
     if (state && isDocCompleted(state, collectionPath, doc.id)) {
@@ -150,7 +150,7 @@ function processDocument(
 
     // Apply transform if provided
     if (transformFn) {
-        const transformResult = applyTransform(docData, doc, collectionPath, transformFn, logger, stats);
+        const transformResult = applyTransform(docData, doc, collectionPath, transformFn, output, stats);
         if (!transformResult.success) {
             return { skip: true, markCompleted: transformResult.markCompleted };
         }
@@ -158,7 +158,7 @@ function processDocument(
     }
 
     // Check document size
-    const sizeResult = checkDocumentSize(docData, doc, collectionPath, destCollectionPath, destDocId, config, logger);
+    const sizeResult = checkDocumentSize(docData, doc, collectionPath, destCollectionPath, destDocId, config, output);
     if (!sizeResult.valid) {
         return { skip: true, markCompleted: sizeResult.markCompleted };
     }
@@ -176,7 +176,7 @@ async function commitBatchWithRetry(
     ctx: TransferContext,
     collectionPath: string
 ): Promise<void> {
-    const { config, logger, state, stats, rateLimiter } = ctx;
+    const { config, output, state, stats, rateLimiter } = ctx;
 
     if (rateLimiter) {
         await rateLimiter.acquire(batchDocIds.length);
@@ -185,7 +185,7 @@ async function commitBatchWithRetry(
     await withRetry(() => destBatch.commit(), {
         retries: config.retries,
         onRetry: (attempt, max, err, delay) => {
-            logger.error(`Retry commit ${attempt}/${max}`, { error: err.message, delay });
+            output.logError(`Retry commit ${attempt}/${max}`, { error: err.message, delay });
         },
     });
 
@@ -198,6 +198,61 @@ async function commitBatchWithRetry(
     }
 }
 
+function addDocToBatch(
+    destBatch: FirebaseFirestore.WriteBatch,
+    destDb: Firestore,
+    destCollectionPath: string,
+    destDocId: string,
+    data: Record<string, unknown>,
+    merge: boolean
+): void {
+    const destDocRef = destDb.collection(destCollectionPath).doc(destDocId);
+    if (merge) {
+        destBatch.set(destDocRef, data, { merge: true });
+    } else {
+        destBatch.set(destDocRef, data);
+    }
+}
+
+async function processDocInBatch(
+    doc: QueryDocumentSnapshot,
+    ctx: TransferContext,
+    collectionPath: string,
+    destCollectionPath: string,
+    destBatch: FirebaseFirestore.WriteBatch,
+    batchDocIds: string[],
+    depth: number
+): Promise<void> {
+    const { destDb, config, stats, output, progressBar } = ctx;
+    const result = processDocument(doc, ctx, collectionPath, destCollectionPath);
+    incrementProgress(progressBar);
+
+    if (result.skip) {
+        if (result.markCompleted) batchDocIds.push(doc.id);
+        return;
+    }
+
+    const destDocId = getDestDocId(doc.id, config.idPrefix, config.idSuffix);
+
+    if (!config.dryRun) {
+        addDocToBatch(destBatch, destDb, destCollectionPath, destDocId, result.data!, config.merge);
+    }
+
+    batchDocIds.push(doc.id);
+    stats.documentsTransferred++;
+
+    output.logInfo('Transferred document', {
+        source: collectionPath,
+        dest: destCollectionPath,
+        sourceDocId: doc.id,
+        destDocId,
+    });
+
+    if (config.includeSubcollections) {
+        await processSubcollections(ctx, doc, collectionPath, depth);
+    }
+}
+
 async function processBatch(
     batch: QueryDocumentSnapshot[],
     ctx: TransferContext,
@@ -205,46 +260,14 @@ async function processBatch(
     destCollectionPath: string,
     depth: number
 ): Promise<string[]> {
-    const { destDb, config, stats, logger, progressBar } = ctx;
-    const destBatch = destDb.batch();
+    const destBatch = ctx.destDb.batch();
     const batchDocIds: string[] = [];
 
     for (const doc of batch) {
-        const result = processDocument(doc, ctx, collectionPath, destCollectionPath);
-        incrementProgress(progressBar);
-
-        if (result.skip) {
-            if (result.markCompleted) batchDocIds.push(doc.id);
-            continue;
-        }
-
-        const destDocId = getDestDocId(doc.id, config.idPrefix, config.idSuffix);
-        const destDocRef = destDb.collection(destCollectionPath).doc(destDocId);
-
-        if (!config.dryRun) {
-            if (config.merge) {
-                destBatch.set(destDocRef, result.data!, { merge: true });
-            } else {
-                destBatch.set(destDocRef, result.data!);
-            }
-        }
-
-        batchDocIds.push(doc.id);
-        stats.documentsTransferred++;
-
-        logger.info('Transferred document', {
-            source: collectionPath,
-            dest: destCollectionPath,
-            sourceDocId: doc.id,
-            destDocId,
-        });
-
-        if (config.includeSubcollections) {
-            await processSubcollections(ctx, doc, collectionPath, depth);
-        }
+        await processDocInBatch(doc, ctx, collectionPath, destCollectionPath, destBatch, batchDocIds, depth);
     }
 
-    if (!config.dryRun && batch.length > 0) {
+    if (!ctx.config.dryRun && batch.length > 0) {
         await commitBatchWithRetry(destBatch, batchDocIds, ctx, collectionPath);
     }
 
@@ -256,7 +279,7 @@ export async function transferCollection(
     collectionPath: string,
     depth: number = 0
 ): Promise<void> {
-    const { sourceDb, config, stats, logger } = ctx;
+    const { sourceDb, config, stats, output } = ctx;
     const destCollectionPath = getDestCollectionPath(collectionPath, config.renameCollection);
 
     const query = buildTransferQuery(sourceDb, collectionPath, config, depth);
@@ -264,14 +287,14 @@ export async function transferCollection(
     const snapshot = await withRetry(() => query.get(), {
         retries: config.retries,
         onRetry: (attempt, max, err, delay) => {
-            logger.error(`Retry ${attempt}/${max} for ${collectionPath}`, { error: err.message, delay });
+            output.logError(`Retry ${attempt}/${max} for ${collectionPath}`, { error: err.message, delay });
         },
     });
 
     if (snapshot.empty) return;
 
     stats.collectionsProcessed++;
-    logger.info(`Processing collection: ${collectionPath}`, { documents: snapshot.size });
+    output.logInfo(`Processing collection: ${collectionPath}`, { documents: snapshot.size });
 
     for (let i = 0; i < snapshot.docs.length; i += config.batchSize) {
         const batch = snapshot.docs.slice(i, i + config.batchSize);

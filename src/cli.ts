@@ -7,7 +7,7 @@ import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 
 import type { Config, CliArgs } from './types.js';
-import { Logger } from './utils/logger.js';
+import { Output } from './utils/output.js';
 import { ensureCredentials } from './utils/credentials.js';
 import { loadConfigFile, mergeConfig } from './config/parser.js';
 import { validateConfig } from './config/validator.js';
@@ -255,13 +255,17 @@ async function main(): Promise<void> {
         }
     }
 
-    // Initialize logger
-    const logger = new Logger(argv.log);
-    logger.init();
-    logger.info('Transfer started', { config: config as unknown as Record<string, unknown> });
+    // Initialize output
+    const output = new Output({
+        quiet: argv.quiet,
+        json: argv.json,
+        logFile: argv.log,
+    });
+    output.init();
+    output.logInfo('Transfer started', { config: config as unknown as Record<string, unknown> });
 
     // Run transfer
-    const result = await runTransfer(config, argv, logger);
+    const result = await runTransfer(config, argv, output);
 
     if (!result.success) {
         process.exit(1);

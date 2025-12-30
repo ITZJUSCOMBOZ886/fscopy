@@ -1,5 +1,5 @@
 import type { Stats } from '../types.js';
-import type { Logger } from '../utils/logger.js';
+import type { Output } from '../utils/output.js';
 
 export interface WebhookPayload {
     source: string;
@@ -108,7 +108,7 @@ export function formatDiscordPayload(payload: WebhookPayload): Record<string, un
 export async function sendWebhook(
     webhookUrl: string,
     payload: WebhookPayload,
-    logger: Logger
+    output: Output
 ): Promise<void> {
     const webhookType = detectWebhookType(webhookUrl);
 
@@ -136,11 +136,11 @@ export async function sendWebhook(
             throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
 
-        logger.info(`Webhook sent successfully (${webhookType})`, { url: webhookUrl });
-        console.log(`📤 Webhook notification sent (${webhookType})`);
+        output.logInfo(`Webhook sent successfully (${webhookType})`, { url: webhookUrl });
+        output.info(`📤 Webhook notification sent (${webhookType})`);
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        logger.error(`Failed to send webhook: ${message}`, { url: webhookUrl });
-        console.error(`⚠️  Failed to send webhook: ${message}`);
+        output.logError(`Failed to send webhook: ${message}`, { url: webhookUrl });
+        output.warn(`⚠️  Failed to send webhook: ${message}`);
     }
 }

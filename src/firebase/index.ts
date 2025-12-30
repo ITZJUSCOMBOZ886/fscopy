@@ -1,6 +1,7 @@
 import admin from 'firebase-admin';
 import type { Firestore } from 'firebase-admin/firestore';
 import type { Config } from '../types.js';
+import type { Output } from '../utils/output.js';
 import { formatFirebaseError } from '../utils/errors.js';
 
 let sourceApp: admin.app.App | null = null;
@@ -37,14 +38,15 @@ export function initializeFirebase(config: Config): FirebaseConnections {
 export async function checkDatabaseConnectivity(
     sourceDb: Firestore,
     destDb: Firestore,
-    config: Config
+    config: Config,
+    output: Output
 ): Promise<void> {
-    console.log('🔌 Checking database connectivity...');
+    output.info('🔌 Checking database connectivity...');
 
     // Check source database
     try {
         await sourceDb.listCollections();
-        console.log(`   ✓ Source (${config.sourceProject}) - connected`);
+        output.info(`   ✓ Source (${config.sourceProject}) - connected`);
     } catch (error) {
         const err = error as Error & { code?: string };
         const errorInfo = formatFirebaseError(err);
@@ -56,7 +58,7 @@ export async function checkDatabaseConnectivity(
     if (config.sourceProject !== config.destProject) {
         try {
             await destDb.listCollections();
-            console.log(`   ✓ Destination (${config.destProject}) - connected`);
+            output.info(`   ✓ Destination (${config.destProject}) - connected`);
         } catch (error) {
             const err = error as Error & { code?: string };
             const errorInfo = formatFirebaseError(err);
@@ -64,10 +66,10 @@ export async function checkDatabaseConnectivity(
             throw new Error(`Cannot connect to destination database (${config.destProject}): ${errorInfo.message}${hint}`);
         }
     } else {
-        console.log(`   ✓ Destination (same as source) - connected`);
+        output.info(`   ✓ Destination (same as source) - connected`);
     }
 
-    console.log('');
+    output.blank();
 }
 
 export async function cleanupFirebase(): Promise<void> {

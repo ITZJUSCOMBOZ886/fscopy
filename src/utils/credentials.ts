@@ -3,10 +3,10 @@ import path from 'node:path';
 import os from 'node:os';
 
 export function checkCredentialsExist(): { exists: boolean; path: string } {
-    // Check for explicit credentials file
-    if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-        const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-        return { exists: fs.existsSync(credPath), path: credPath };
+    // Check for explicit credentials file (non-empty string)
+    const envCredPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    if (envCredPath && envCredPath.length > 0) {
+        return { exists: fs.existsSync(envCredPath), path: envCredPath };
     }
 
     // Check for Application Default Credentials
@@ -20,6 +20,11 @@ export function checkCredentialsExist(): { exists: boolean; path: string } {
 }
 
 export function ensureCredentials(): void {
+    // Skip credentials check in test environment
+    if (process.env.FSCOPY_SKIP_CREDENTIALS_CHECK === '1') {
+        return;
+    }
+
     const { exists, path: credPath } = checkCredentialsExist();
 
     if (!exists) {

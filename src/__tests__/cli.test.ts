@@ -18,8 +18,8 @@ async function runCli(args: string[], options: { cwd?: string } = {}): Promise<{
             ...process.env,
             // Disable color output for easier testing
             NO_COLOR: '1',
-            // Prevent ADC check from failing in CI
-            GOOGLE_APPLICATION_CREDENTIALS: '',
+            // Skip credentials check in tests
+            FSCOPY_SKIP_CREDENTIALS_CHECK: '1',
         },
     });
 

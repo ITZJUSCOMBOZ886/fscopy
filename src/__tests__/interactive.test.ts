@@ -73,6 +73,7 @@ function createBaseConfig(overrides: Partial<Config> = {}): Config {
         rateLimit: 0,
         skipOversized: false,
         json: false,
+        transformSamples: 3,
         ...overrides,
     };
 }

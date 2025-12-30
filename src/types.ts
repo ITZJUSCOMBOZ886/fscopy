@@ -34,6 +34,7 @@ export interface Config {
     rateLimit: number;
     skipOversized: boolean;
     json: boolean;
+    transformSamples: number;
 }
 
 export interface Stats {
@@ -98,4 +99,5 @@ export interface CliArgs {
     rateLimit?: number;
     skipOversized?: boolean;
     json?: boolean;
+    transformSamples?: number;
 }

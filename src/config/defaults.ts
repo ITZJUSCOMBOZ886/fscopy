@@ -26,6 +26,7 @@ export const defaults: Config = {
     rateLimit: 0,
     skipOversized: false,
     json: false,
+    transformSamples: 3,
 };
 
 export const iniTemplate = `; fscopy configuration file

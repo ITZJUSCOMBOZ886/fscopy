@@ -160,3 +160,4 @@ INI format uses `[projects]` section for source/dest and `[transfer]` section fo
 | Rate limit | `--rate-limit` | - | - | 0 (none) |
 | Skip oversized | `--skip-oversized` | - | - | false |
 | JSON output | `--json` | - | - | false |
+| Transform samples | `--transform-samples` | - | - | 3 |

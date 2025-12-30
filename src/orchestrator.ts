@@ -132,7 +132,7 @@ export async function runTransfer(config: Config, argv: CliArgs, output: Output)
         const { sourceDb, destDb } = initializeFirebase(config);
         await checkDatabaseConnectivity(sourceDb, destDb, config, output);
 
-        if (transformFn && config.dryRun) {
+        if (transformFn && config.dryRun && config.transformSamples !== 0) {
             await validateTransformWithSamples(sourceDb, config, transformFn, output);
         }
 
@@ -199,13 +199,21 @@ async function validateTransformWithSamples(
     transformFn: TransformFunction,
     output: Output
 ): Promise<void> {
-    output.info('🧪 Validating transform with sample documents...');
+    const samplesPerCollection = config.transformSamples;
+    const testAll = samplesPerCollection < 0;
+
+    output.info(`🧪 Validating transform with ${testAll ? 'all' : samplesPerCollection} sample(s) per collection...`);
     let samplesTested = 0;
     let samplesSkipped = 0;
     let samplesErrors = 0;
 
     for (const collection of config.collections) {
-        const snapshot = await sourceDb.collection(collection).limit(3).get();
+        let query: FirebaseFirestore.Query = sourceDb.collection(collection);
+        if (!testAll) {
+            query = query.limit(samplesPerCollection);
+        }
+
+        const snapshot = await query.get();
         for (const doc of snapshot.docs) {
             try {
                 const result = transformFn(doc.data() as Record<string, unknown>, {

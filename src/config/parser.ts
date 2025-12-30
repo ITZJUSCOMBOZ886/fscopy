@@ -257,5 +257,6 @@ export function mergeConfig(
         rateLimit: cliArgs.rateLimit ?? defaultConfig.rateLimit,
         skipOversized: cliArgs.skipOversized ?? defaultConfig.skipOversized,
         json: cliArgs.json ?? defaultConfig.json,
+        transformSamples: cliArgs.transformSamples ?? defaultConfig.transformSamples,
     };
 }

@@ -1,5 +1,48 @@
 import type { Config } from '../types.js';
 
+/**
+ * Validate a Firestore collection or document ID.
+ * Returns an error message if invalid, null if valid.
+ */
+export function validateFirestoreId(id: string, type: 'collection' | 'document' = 'collection'): string | null {
+    // Cannot be empty
+    if (!id || id.length === 0) {
+        return `${type} name cannot be empty`;
+    }
+
+    // Cannot be a lone period or double period
+    if (id === '.' || id === '..') {
+        return `${type} name cannot be '.' or '..'`;
+    }
+
+    // Cannot match __.*__ pattern (reserved by Firestore)
+    if (/^__.*__$/.test(id)) {
+        return `${type} name cannot match pattern '__*__' (reserved by Firestore)`;
+    }
+
+    return null;
+}
+
+/**
+ * Validate a collection path (may contain nested paths like users/123/orders).
+ * Returns array of error messages, empty if valid.
+ */
+export function validateCollectionPath(path: string): string[] {
+    const errors: string[] = [];
+    const segments = path.split('/');
+
+    for (let i = 0; i < segments.length; i++) {
+        const segment = segments[i];
+        const type = i % 2 === 0 ? 'collection' : 'document';
+        const error = validateFirestoreId(segment, type);
+        if (error) {
+            errors.push(`Invalid ${type} in path "${path}": ${error}`);
+        }
+    }
+
+    return errors;
+}
+
 export function validateConfig(config: Config): string[] {
     const errors: string[] = [];
 
@@ -23,6 +66,12 @@ export function validateConfig(config: Config): string[] {
     }
     if (!config.collections || config.collections.length === 0) {
         errors.push('At least one collection is required (-c or --collections)');
+    }
+
+    // Validate collection names
+    for (const collection of config.collections) {
+        const pathErrors = validateCollectionPath(collection);
+        errors.push(...pathErrors);
     }
 
     return errors;

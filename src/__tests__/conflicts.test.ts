@@ -33,6 +33,7 @@ function createBaseConfig(overrides: Partial<Config> = {}): Config {
         json: false,
         transformSamples: 3,
         detectConflicts: false,
+        maxDepth: 0,
         ...overrides,
     };
 }

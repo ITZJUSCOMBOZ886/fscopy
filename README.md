@@ -353,39 +353,41 @@ fscopy --init config.json
 
 ## CLI Reference
 
-| Option                     | Alias | Type    | Default | Description                       |
-| -------------------------- | ----- | ------- | ------- | --------------------------------- |
-| `--init`                   |       | string  |         | Generate config template          |
-| `--config`                 | `-f`  | string  |         | Path to config file               |
-| `--source-project`         |       | string  |         | Source Firebase project           |
-| `--dest-project`           |       | string  |         | Destination project               |
-| `--collections`            | `-c`  | array   |         | Collections to transfer           |
-| `--include-subcollections` | `-s`  | boolean | `false` | Include subcollections            |
-| `--where`                  | `-w`  | array   |         | Filter documents                  |
-| `--exclude`                | `-x`  | array   |         | Exclude subcollections            |
-| `--merge`                  | `-m`  | boolean | `false` | Merge instead of overwrite        |
-| `--parallel`               | `-p`  | number  | `1`     | Parallel transfers                |
-| `--dry-run`                | `-d`  | boolean | `true`  | Preview without writing           |
-| `--batch-size`             | `-b`  | number  | `500`   | Documents per batch               |
-| `--limit`                  | `-l`  | number  | `0`     | Limit docs (0 = no limit)         |
-| `--retries`                |       | number  | `3`     | Retries on error                  |
-| `--log`                    |       | string  |         | Log file path                     |
-| `--quiet`                  | `-q`  | boolean | `false` | No progress bar                   |
-| `--yes`                    | `-y`  | boolean | `false` | Skip confirmation                 |
-| `--clear`                  |       | boolean | `false` | Clear destination before transfer |
-| `--delete-missing`         |       | boolean | `false` | Delete dest docs not in source    |
-| `--interactive`            | `-i`  | boolean | `false` | Interactive mode with prompts     |
-| `--transform`              | `-t`  | string  |         | Path to JS/TS transform file      |
-| `--rename-collection`      | `-r`  | array   |         | Rename collection (source:dest)   |
-| `--id-prefix`              |       | string  |         | Add prefix to document IDs        |
-| `--id-suffix`              |       | string  |         | Add suffix to document IDs        |
-| `--webhook`                |       | string  |         | Webhook URL for notifications     |
-| `--resume`                 |       | boolean | `false` | Resume from saved state           |
-| `--state-file`             |       | string  | `.fscopy-state.json` | State file path      |
-| `--verify`                 |       | boolean | `false` | Verify counts after transfer      |
-| `--rate-limit`             |       | number  | `0`     | Limit docs/second (0 = unlimited) |
-| `--skip-oversized`         |       | boolean | `false` | Skip documents > 1MB              |
-| `--json`                   |       | boolean | `false` | JSON output for CI/CD             |
+| Option                     | Alias | Type    | Default              | Description                             |
+| -------------------------- | ----- | ------- | -------------------- | --------------------------------------- |
+| `--init`                   |       | string  |                      | Generate config template                |
+| `--config`                 | `-f`  | string  |                      | Path to config file                     |
+| `--source-project`         |       | string  |                      | Source Firebase project                 |
+| `--dest-project`           |       | string  |                      | Destination project                     |
+| `--collections`            | `-c`  | array   |                      | Collections to transfer                 |
+| `--include-subcollections` | `-s`  | boolean | `false`              | Include subcollections                  |
+| `--where`                  | `-w`  | array   |                      | Filter documents                        |
+| `--exclude`                | `-x`  | array   |                      | Exclude subcollections                  |
+| `--merge`                  | `-m`  | boolean | `false`              | Merge instead of overwrite              |
+| `--parallel`               | `-p`  | number  | `1`                  | Parallel transfers                      |
+| `--dry-run`                | `-d`  | boolean | `true`               | Preview without writing                 |
+| `--batch-size`             | `-b`  | number  | `500`                | Documents per batch                     |
+| `--limit`                  | `-l`  | number  | `0`                  | Limit docs (0 = no limit)               |
+| `--retries`                |       | number  | `3`                  | Retries on error                        |
+| `--log`                    |       | string  |                      | Log file path                           |
+| `--quiet`                  | `-q`  | boolean | `false`              | No progress bar                         |
+| `--yes`                    | `-y`  | boolean | `false`              | Skip confirmation                       |
+| `--clear`                  |       | boolean | `false`              | Clear destination before transfer       |
+| `--delete-missing`         |       | boolean | `false`              | Delete dest docs not in source          |
+| `--interactive`            | `-i`  | boolean | `false`              | Interactive mode with prompts           |
+| `--transform`              | `-t`  | string  |                      | Path to JS/TS transform file            |
+| `--rename-collection`      | `-r`  | array   |                      | Rename collection (source:dest)         |
+| `--id-prefix`              |       | string  |                      | Add prefix to document IDs              |
+| `--id-suffix`              |       | string  |                      | Add suffix to document IDs              |
+| `--webhook`                |       | string  |                      | Webhook URL for notifications           |
+| `--resume`                 |       | boolean | `false`              | Resume from saved state                 |
+| `--state-file`             |       | string  | `.fscopy-state.json` | State file path                         |
+| `--verify`                 |       | boolean | `false`              | Verify counts after transfer            |
+| `--rate-limit`             |       | number  | `0`                  | Limit docs/second (0 = unlimited)       |
+| `--skip-oversized`         |       | boolean | `false`              | Skip documents > 1MB                    |
+| `--json`                   |       | boolean | `false`              | JSON output for CI/CD                   |
+| `--max-depth`              |       | number  | `0`                  | Max subcollection depth (0 = unlimited) |
+| `--detect-conflicts`       |       | boolean | `false`              | Detect concurrent modifications         |
 
 ## How It Works
 
@@ -414,6 +416,46 @@ fscopy --init config.json
 - **Delete-missing syncs** - `--delete-missing` removes orphan docs after transfer
 - **Transform applies to all** - Transform function is applied to both root and subcollection docs
 - **Same project allowed** - Source and destination can be the same project when using `--rename-collection` or `--id-prefix`/`--id-suffix`
+
+## Limitations
+
+### Firestore Special Types
+
+When reading documents, Firestore sentinel values are resolved to their actual values:
+
+| Sentinel | Behavior |
+| -------- | -------- |
+| `serverTimestamp()` | Resolved to actual `Timestamp` value |
+| `increment()` | Resolved to current numeric value |
+| `arrayUnion()` / `arrayRemove()` | Resolved to current array value |
+
+These sentinels are **write-time operations**, not persistent values. fscopy transfers the resolved data, which is the expected behavior for data migration.
+
+### Document References
+
+`DocumentReference` fields are transferred as-is. If the reference points to a document in the source project, it will still point to the source after transfer. Consider using `--transform` to update references if needed.
+
+### Collection and Document IDs
+
+fscopy validates IDs according to Firestore rules:
+
+- Cannot be empty
+- Cannot be `.` or `..`
+- Cannot match `__*__` pattern (reserved by Firestore)
+
+Unicode characters, special characters (`#`, `$`, `[`, `]`), and forward slashes in nested paths are all supported.
+
+### Subcollection Depth
+
+Use `--max-depth` to limit recursion when copying deeply nested subcollections:
+
+```bash
+# Copy only first level of subcollections
+fscopy -f config.ini -s --max-depth 1
+
+# Copy up to 3 levels deep
+fscopy -f config.ini -s --max-depth 3
+```
 
 ## Development
 

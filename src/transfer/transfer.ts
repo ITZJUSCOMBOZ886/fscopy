@@ -191,16 +191,27 @@ async function processSubcollections(
     collectionPath: string,
     depth: number
 ): Promise<void> {
+    const { config, output } = ctx;
+
+    // Check max depth limit (0 = unlimited)
+    if (config.maxDepth > 0 && depth >= config.maxDepth) {
+        output.logInfo(`Skipping subcollections at depth ${depth} (max: ${config.maxDepth})`, {
+            collection: collectionPath,
+            docId: doc.id,
+        });
+        return;
+    }
+
     const subcollections = await getSubcollections(doc.ref);
 
     for (const subcollectionId of subcollections) {
-        if (matchesExcludePattern(subcollectionId, ctx.config.exclude)) {
-            ctx.output.logInfo(`Skipping excluded subcollection: ${subcollectionId}`);
+        if (matchesExcludePattern(subcollectionId, config.exclude)) {
+            output.logInfo(`Skipping excluded subcollection: ${subcollectionId}`);
             continue;
         }
 
         const subcollectionPath = `${collectionPath}/${doc.id}/${subcollectionId}`;
-        const subCtx = { ...ctx, config: { ...ctx.config, limit: 0, where: [] } };
+        const subCtx = { ...ctx, config: { ...config, limit: 0, where: [] } };
         await transferCollection(subCtx, subcollectionPath, depth + 1);
     }
 }

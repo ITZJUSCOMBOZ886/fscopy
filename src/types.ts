@@ -36,6 +36,7 @@ export interface Config {
     json: boolean;
     transformSamples: number;
     detectConflicts: boolean;
+    maxDepth: number;
 }
 
 export interface ConflictInfo {
@@ -110,4 +111,5 @@ export interface CliArgs {
     json?: boolean;
     transformSamples?: number;
     detectConflicts?: boolean;
+    maxDepth?: number;
 }

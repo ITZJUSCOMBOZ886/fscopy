@@ -36,6 +36,7 @@ function displayAdditionalOptions(config: Config): void {
         { condition: config.rateLimit > 0, icon: '⏱️ ', label: 'Rate limit', value: `${config.rateLimit} docs/s` },
         { condition: config.skipOversized, icon: '📏', label: 'Skip oversized', value: 'enabled (skip docs > 1MB)' },
         { condition: config.detectConflicts, icon: '🔒', label: 'Detect conflicts', value: 'enabled' },
+        { condition: config.maxDepth > 0, icon: '📊', label: 'Max depth', value: `${config.maxDepth} level(s)` },
     ];
 
     for (const opt of options) {

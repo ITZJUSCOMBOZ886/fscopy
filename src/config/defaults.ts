@@ -28,6 +28,7 @@ export const defaults: Config = {
     json: false,
     transformSamples: 3,
     detectConflicts: false,
+    maxDepth: 0,
 };
 
 export const iniTemplate = `; fscopy configuration file

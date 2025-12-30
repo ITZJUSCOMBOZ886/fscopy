@@ -259,5 +259,6 @@ export function mergeConfig(
         json: cliArgs.json ?? defaultConfig.json,
         transformSamples: cliArgs.transformSamples ?? defaultConfig.transformSamples,
         detectConflicts: cliArgs.detectConflicts ?? defaultConfig.detectConflicts,
+        maxDepth: cliArgs.maxDepth ?? defaultConfig.maxDepth,
     };
 }

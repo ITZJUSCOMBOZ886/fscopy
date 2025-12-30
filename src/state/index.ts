@@ -3,6 +3,83 @@ import type { Config, TransferState, Stats } from '../types.js';
 
 export const STATE_VERSION = 1;
 
+// =============================================================================
+// CompletedDocsCache - O(1) lookup using Set instead of Array.includes()
+// =============================================================================
+
+/**
+ * Cache for completed document IDs using Set for O(1) lookups.
+ * Wraps the TransferState.completedDocs (which uses arrays for JSON serialization).
+ */
+export class CompletedDocsCache {
+    private readonly cache: Map<string, Set<string>> = new Map();
+
+    constructor(completedDocs: Record<string, string[]> = {}) {
+        for (const [collection, docIds] of Object.entries(completedDocs)) {
+            this.cache.set(collection, new Set(docIds));
+        }
+    }
+
+    /**
+     * Check if a document is completed. O(1) lookup.
+     */
+    has(collectionPath: string, docId: string): boolean {
+        return this.cache.get(collectionPath)?.has(docId) ?? false;
+    }
+
+    /**
+     * Mark a document as completed.
+     */
+    add(collectionPath: string, docId: string): void {
+        let set = this.cache.get(collectionPath);
+        if (!set) {
+            set = new Set();
+            this.cache.set(collectionPath, set);
+        }
+        set.add(docId);
+    }
+
+    /**
+     * Mark multiple documents as completed.
+     */
+    addBatch(collectionPath: string, docIds: string[]): void {
+        let set = this.cache.get(collectionPath);
+        if (!set) {
+            set = new Set();
+            this.cache.set(collectionPath, set);
+        }
+        for (const docId of docIds) {
+            set.add(docId);
+        }
+    }
+
+    /**
+     * Convert back to Record<string, string[]> for JSON serialization.
+     */
+    toRecord(): Record<string, string[]> {
+        const result: Record<string, string[]> = {};
+        for (const [collection, set] of this.cache) {
+            result[collection] = Array.from(set);
+        }
+        return result;
+    }
+
+    /**
+     * Get total count of completed documents.
+     */
+    get totalCount(): number {
+        let count = 0;
+        for (const set of this.cache.values()) {
+            count += set.size;
+        }
+        return count;
+    }
+}
+
+// =============================================================================
+// StateSaver
+// =============================================================================
+
 export interface StateSaverOptions {
     /** Save every N batches (default: 10) */
     batchInterval?: number;
@@ -14,7 +91,8 @@ const DEFAULT_BATCH_INTERVAL = 10;
 const DEFAULT_TIME_INTERVAL = 5000;
 
 /**
- * Throttled state saver to reduce I/O overhead.
+ * Throttled state saver with O(1) completed doc lookups.
+ * Uses CompletedDocsCache for efficient lookups during transfer.
  * Saves state every N batches OR after X milliseconds, whichever comes first.
  */
 export class StateSaver {
@@ -23,6 +101,7 @@ export class StateSaver {
     private readonly batchInterval: number;
     private readonly timeInterval: number;
     private dirty: boolean = false;
+    private readonly cache: CompletedDocsCache;
 
     constructor(
         private readonly stateFile: string,
@@ -31,6 +110,14 @@ export class StateSaver {
     ) {
         this.batchInterval = options.batchInterval ?? DEFAULT_BATCH_INTERVAL;
         this.timeInterval = options.timeInterval ?? DEFAULT_TIME_INTERVAL;
+        this.cache = new CompletedDocsCache(state.completedDocs);
+    }
+
+    /**
+     * Check if a document is already completed. O(1) lookup.
+     */
+    isCompleted(collectionPath: string, docId: string): boolean {
+        return this.cache.has(collectionPath, docId);
     }
 
     /**
@@ -38,9 +125,7 @@ export class StateSaver {
      * Saves to disk if thresholds are met.
      */
     markBatchCompleted(collectionPath: string, docIds: string[], stats: Stats): void {
-        for (const docId of docIds) {
-            markDocCompleted(this.state, collectionPath, docId);
-        }
+        this.cache.addBatch(collectionPath, docIds);
         this.state.stats = { ...stats };
         this.dirty = true;
         this.batchesSinceLastSave++;
@@ -67,9 +152,10 @@ export class StateSaver {
     }
 
     /**
-     * Save state to disk and reset counters.
+     * Sync cache to state and save to disk.
      */
     private save(): void {
+        this.state.completedDocs = this.cache.toRecord();
         saveTransferState(this.stateFile, this.state);
         this.lastSaveTime = Date.now();
         this.batchesSinceLastSave = 0;
@@ -88,9 +174,17 @@ export class StateSaver {
 
     /**
      * Get the underlying state object.
+     * Note: completedDocs may be stale until flush() is called.
      */
     getState(): TransferState {
         return this.state;
+    }
+
+    /**
+     * Get total count of completed documents.
+     */
+    get completedCount(): number {
+        return this.cache.totalCount;
     }
 }
 

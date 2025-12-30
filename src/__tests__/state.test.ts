@@ -12,6 +12,7 @@ import {
     markDocCompleted,
     STATE_VERSION,
     StateSaver,
+    CompletedDocsCache,
 } from '../state/index.js';
 import type { Config, TransferState, Stats } from '../types.js';
 
@@ -341,7 +342,8 @@ describe('State Management', () => {
 
             // Should not save yet (only 1 batch, threshold is 5)
             expect(fs.existsSync(stateFile)).toBe(false);
-            expect(state.completedDocs.users).toEqual(['doc1']);
+            // Cache has the data, but state.completedDocs is only updated on save
+            expect(saver.isCompleted('users', 'doc1')).toBe(true);
         });
 
         test('saves after batch interval is reached', () => {
@@ -421,6 +423,95 @@ describe('State Management', () => {
             saver.markBatchCompleted('users', ['doc1'], stats);
 
             expect(state.stats).toEqual(stats);
+        });
+
+        test('completedCount returns total completed docs', () => {
+            const state = createTestState();
+            const saver = new StateSaver(stateFile, state, { batchInterval: 100 });
+
+            saver.markBatchCompleted('users', ['doc1', 'doc2'], createTestStats());
+            saver.markBatchCompleted('orders', ['order1'], createTestStats());
+
+            expect(saver.completedCount).toBe(3);
+        });
+
+        test('isCompleted provides O(1) lookup', () => {
+            const state = createTestState();
+            state.completedDocs = { users: ['existing1', 'existing2'] };
+            const saver = new StateSaver(stateFile, state, { batchInterval: 100 });
+
+            // Pre-existing docs from state
+            expect(saver.isCompleted('users', 'existing1')).toBe(true);
+            expect(saver.isCompleted('users', 'existing2')).toBe(true);
+            expect(saver.isCompleted('users', 'nonexistent')).toBe(false);
+
+            // New docs added via markBatchCompleted
+            saver.markBatchCompleted('users', ['new1'], createTestStats());
+            expect(saver.isCompleted('users', 'new1')).toBe(true);
+        });
+    });
+
+    describe('CompletedDocsCache', () => {
+        test('initializes from empty object', () => {
+            const cache = new CompletedDocsCache({});
+            expect(cache.has('users', 'doc1')).toBe(false);
+            expect(cache.totalCount).toBe(0);
+        });
+
+        test('initializes from existing data', () => {
+            const cache = new CompletedDocsCache({
+                users: ['doc1', 'doc2'],
+                orders: ['order1'],
+            });
+
+            expect(cache.has('users', 'doc1')).toBe(true);
+            expect(cache.has('users', 'doc2')).toBe(true);
+            expect(cache.has('orders', 'order1')).toBe(true);
+            expect(cache.has('users', 'doc3')).toBe(false);
+            expect(cache.totalCount).toBe(3);
+        });
+
+        test('add creates collection if not exists', () => {
+            const cache = new CompletedDocsCache({});
+            cache.add('users', 'doc1');
+
+            expect(cache.has('users', 'doc1')).toBe(true);
+            expect(cache.totalCount).toBe(1);
+        });
+
+        test('addBatch adds multiple docs efficiently', () => {
+            const cache = new CompletedDocsCache({});
+            cache.addBatch('users', ['doc1', 'doc2', 'doc3']);
+
+            expect(cache.has('users', 'doc1')).toBe(true);
+            expect(cache.has('users', 'doc2')).toBe(true);
+            expect(cache.has('users', 'doc3')).toBe(true);
+            expect(cache.totalCount).toBe(3);
+        });
+
+        test('toRecord converts back to array format', () => {
+            const cache = new CompletedDocsCache({});
+            cache.add('users', 'doc1');
+            cache.add('users', 'doc2');
+            cache.add('orders', 'order1');
+
+            const record = cache.toRecord();
+
+            expect(record.users).toContain('doc1');
+            expect(record.users).toContain('doc2');
+            expect(record.orders).toContain('order1');
+            expect(record.users.length).toBe(2);
+            expect(record.orders.length).toBe(1);
+        });
+
+        test('handles duplicate adds (Set behavior)', () => {
+            const cache = new CompletedDocsCache({});
+            cache.add('users', 'doc1');
+            cache.add('users', 'doc1');
+            cache.add('users', 'doc1');
+
+            expect(cache.totalCount).toBe(1);
+            expect(cache.toRecord().users.length).toBe(1);
         });
     });
 });

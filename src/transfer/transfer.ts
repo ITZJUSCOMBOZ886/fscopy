@@ -7,7 +7,6 @@ import type { StateSaver } from '../state/index.js';
 import { withRetry } from '../utils/retry.js';
 import { matchesExcludePattern } from '../utils/patterns.js';
 import { estimateDocumentSize, formatBytes, FIRESTORE_MAX_DOC_SIZE } from '../utils/doc-size.js';
-import { isDocCompleted } from '../state/index.js';
 import { getSubcollections, getDestCollectionPath, getDestDocId } from './helpers.js';
 
 export interface TransferContext {
@@ -140,8 +139,8 @@ function processDocument(
 ): DocProcessResult {
     const { config, output, stateSaver, stats, transformFn } = ctx;
 
-    // Skip if already completed (resume mode)
-    if (stateSaver && isDocCompleted(stateSaver.getState(), collectionPath, doc.id)) {
+    // Skip if already completed (resume mode) - O(1) lookup via Set
+    if (stateSaver?.isCompleted(collectionPath, doc.id)) {
         stats.documentsTransferred++;
         return { skip: true, markCompleted: false };
     }

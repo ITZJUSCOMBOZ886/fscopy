@@ -51,8 +51,10 @@ export class RateLimiter {
 
         await this.sleep(waitTime);
 
-        // After waiting, we should have enough tokens
-        this.tokens = 0; // We consumed them all
+        // After waiting, calculate remaining tokens:
+        // tokens accumulated = waitTime * refillRate (may exceed tokensNeeded due to ceiling)
+        const tokensAccumulated = waitTime * this.refillRate;
+        this.tokens = Math.min(this.maxTokens, this.tokens + tokensAccumulated - count);
         this.lastRefill = Date.now();
     }
 

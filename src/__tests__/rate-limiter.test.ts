@@ -75,4 +75,23 @@ describe('RateLimiter', () => {
 
         expect(elapsed).toBeLessThan(50);
     });
+
+    test('preserves excess tokens after waiting', async () => {
+        const limiter = new RateLimiter(10); // 10 docs/second
+
+        // Exhaust tokens
+        await limiter.acquire(10);
+
+        // Request 1 token - will wait ~100ms but accumulate ~1 token
+        await limiter.acquire(1);
+
+        // The next small request should be nearly instant
+        // because we accumulated fractional excess tokens during the wait
+        const start = Date.now();
+        await limiter.acquire(1);
+        const elapsed = Date.now() - start;
+
+        // Should wait less than full 100ms since we have leftover tokens
+        expect(elapsed).toBeLessThan(150);
+    });
 });

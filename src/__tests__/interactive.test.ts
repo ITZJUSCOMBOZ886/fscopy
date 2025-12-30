@@ -76,6 +76,7 @@ function createBaseConfig(overrides: Partial<Config> = {}): Config {
         transformSamples: 3,
         detectConflicts: false,
         maxDepth: 0,
+        verifyIntegrity: false,
         ...overrides,
     };
 }

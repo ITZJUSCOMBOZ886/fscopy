@@ -37,6 +37,7 @@ function displayAdditionalOptions(config: Config): void {
         { condition: config.skipOversized, icon: '📏', label: 'Skip oversized', value: 'enabled (skip docs > 1MB)' },
         { condition: config.detectConflicts, icon: '🔒', label: 'Detect conflicts', value: 'enabled' },
         { condition: config.maxDepth > 0, icon: '📊', label: 'Max depth', value: `${config.maxDepth} level(s)` },
+        { condition: config.verifyIntegrity, icon: '✅', label: 'Verify integrity', value: 'enabled (hash verification)' },
     ];
 
     for (const opt of options) {
@@ -99,6 +100,9 @@ export function printSummary(stats: Stats, duration: string, logFile?: string, d
     if (stats.conflicts > 0) {
         console.log(`Conflicts detected:    ${stats.conflicts}`);
     }
+    if (stats.integrityErrors > 0) {
+        console.log(`Integrity errors:      ${stats.integrityErrors}`);
+    }
     console.log(`Errors: ${stats.errors}`);
     console.log(`Duration: ${duration}s`);
 
@@ -136,6 +140,7 @@ export function formatJsonOutput(
             documentsDeleted: stats.documentsDeleted,
             errors: stats.errors,
             conflicts: stats.conflicts,
+            integrityErrors: stats.integrityErrors,
         },
         duration,
         ...(verifyResult && { verify: verifyResult }),

@@ -7,6 +7,7 @@ import type { StateSaver } from '../state/index.js';
 import { withRetry } from '../utils/retry.js';
 import { matchesExcludePattern } from '../utils/patterns.js';
 import { estimateDocumentSize, formatBytes, FIRESTORE_MAX_DOC_SIZE } from '../utils/doc-size.js';
+import { hashDocumentData, compareHashes } from '../utils/integrity.js';
 import { getSubcollections, getDestCollectionPath, getDestDocId } from './helpers.js';
 
 export interface TransferContext {
@@ -300,6 +301,7 @@ interface PreparedDoc {
     sourceDocId: string;
     destDocId: string;
     data: Record<string, unknown>;
+    sourceHash?: string;
 }
 
 async function prepareDocForTransfer(
@@ -317,12 +319,61 @@ async function prepareDocForTransfer(
     }
 
     const destDocId = getDestDocId(doc.id, config.idPrefix, config.idSuffix);
-    return {
+    const prepared: PreparedDoc = {
         sourceDoc: doc,
         sourceDocId: doc.id,
         destDocId,
         data: result.data!,
     };
+
+    // Compute source hash if integrity verification is enabled
+    if (config.verifyIntegrity) {
+        prepared.sourceHash = hashDocumentData(result.data!);
+    }
+
+    return prepared;
+}
+
+async function verifyBatchIntegrity(
+    preparedDocs: PreparedDoc[],
+    destDb: Firestore,
+    destCollectionPath: string,
+    stats: Stats,
+    output: Output
+): Promise<void> {
+    const docRefs = preparedDocs.map(p => destDb.collection(destCollectionPath).doc(p.destDocId));
+    const destDocs = await destDb.getAll(...docRefs);
+
+    for (let i = 0; i < destDocs.length; i++) {
+        const prepared = preparedDocs[i];
+        const destDoc = destDocs[i];
+
+        if (!destDoc.exists) {
+            stats.integrityErrors++;
+            output.warn(`⚠️  Integrity error: ${destCollectionPath}/${prepared.destDocId} not found after write`);
+            output.logError('Integrity verification failed', {
+                collection: destCollectionPath,
+                docId: prepared.destDocId,
+                reason: 'document_not_found',
+            });
+            continue;
+        }
+
+        const destData = destDoc.data() as Record<string, unknown>;
+        const destHash = hashDocumentData(destData);
+
+        if (!compareHashes(prepared.sourceHash!, destHash)) {
+            stats.integrityErrors++;
+            output.warn(`⚠️  Integrity error: ${destCollectionPath}/${prepared.destDocId} hash mismatch`);
+            output.logError('Integrity verification failed', {
+                collection: destCollectionPath,
+                docId: prepared.destDocId,
+                reason: 'hash_mismatch',
+                sourceHash: prepared.sourceHash,
+                destHash,
+            });
+        }
+    }
 }
 
 async function commitPreparedDocs(
@@ -358,6 +409,11 @@ async function commitPreparedDocs(
 
     if (!config.dryRun && preparedDocs.length > 0) {
         await commitBatchWithRetry(destBatch, batchDocIds, ctx, collectionPath);
+
+        // Verify integrity after commit if enabled
+        if (config.verifyIntegrity) {
+            await verifyBatchIntegrity(preparedDocs, destDb, destCollectionPath, stats, output);
+        }
     }
 
     return batchDocIds;

@@ -121,6 +121,7 @@ describe('Logger', () => {
                     documentsDeleted: 10,
                     errors: 2,
                     conflicts: 0,
+                    integrityErrors: 0,
                 },
                 '12.34'
             );
@@ -144,6 +145,7 @@ describe('Logger', () => {
                     documentsDeleted: 0,
                     errors: 0,
                     conflicts: 0,
+                    integrityErrors: 0,
                 },
                 '1.00'
             );
@@ -156,7 +158,7 @@ describe('Logger', () => {
             const logger = new Logger();
             expect(() =>
                 logger.summary(
-                    { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0, conflicts: 0 },
+                    { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0, conflicts: 0, integrityErrors: 0 },
                     '0'
                 )
             ).not.toThrow();

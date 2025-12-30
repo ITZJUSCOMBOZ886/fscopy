@@ -55,7 +55,7 @@ function initializeResumeMode(config: Config, output: Output): ResumeResult {
 }
 
 function createEmptyStats(): Stats {
-    return { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0, conflicts: 0 };
+    return { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0, conflicts: 0, integrityErrors: 0 };
 }
 
 async function loadTransform(config: Config, output: Output): Promise<TransformFunction | null> {

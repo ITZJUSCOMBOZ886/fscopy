@@ -260,5 +260,6 @@ export function mergeConfig(
         transformSamples: cliArgs.transformSamples ?? defaultConfig.transformSamples,
         detectConflicts: cliArgs.detectConflicts ?? defaultConfig.detectConflicts,
         maxDepth: cliArgs.maxDepth ?? defaultConfig.maxDepth,
+        verifyIntegrity: cliArgs.verifyIntegrity ?? defaultConfig.verifyIntegrity,
     };
 }

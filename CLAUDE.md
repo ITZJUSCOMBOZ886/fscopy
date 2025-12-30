@@ -60,6 +60,7 @@ fscopy -f config.ini --skip-oversized                    # Skip docs > 1MB
 fscopy -f config.ini --json                              # JSON output for CI/CD
 fscopy -f config.ini --detect-conflicts                  # Detect dest modifications during transfer
 fscopy -f config.ini -s --max-depth 2                    # Limit subcollection recursion to 2 levels
+fscopy -f config.ini --verify-integrity                  # Verify document integrity with hash after transfer
 
 # Local development:
 bun start -- -f config.ini              # Run locally
@@ -166,3 +167,4 @@ INI format uses `[projects]` section for source/dest and `[transfer]` section fo
 | Transform samples | `--transform-samples` | - | - | 3 |
 | Detect conflicts | `--detect-conflicts` | - | - | false |
 | Max depth | `--max-depth` | - | - | 0 (unlimited) |
+| Verify integrity | `--verify-integrity` | - | - | false |

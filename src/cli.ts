@@ -200,6 +200,11 @@ const argv = yargs(hideBin(process.argv))
         description: 'Max subcollection depth (0 = unlimited)',
         default: 0,
     })
+    .option('verify-integrity', {
+        type: 'boolean',
+        description: 'Verify document integrity with hash after transfer',
+        default: false,
+    })
     .example('$0 --init config.ini', 'Generate INI config template (default)')
     .example('$0 --init config.json', 'Generate JSON config template')
     .example('$0 -f config.ini', 'Run transfer with config file')

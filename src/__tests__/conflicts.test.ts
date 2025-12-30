@@ -34,6 +34,7 @@ function createBaseConfig(overrides: Partial<Config> = {}): Config {
         transformSamples: 3,
         detectConflicts: false,
         maxDepth: 0,
+        verifyIntegrity: false,
         ...overrides,
     };
 }
@@ -91,6 +92,7 @@ describe('Conflict Detection', () => {
                 documentsDeleted: 0,
                 errors: 0,
                 conflicts: 0,
+                integrityErrors: 0,
             };
             expect(stats.conflicts).toBeDefined();
             expect(typeof stats.conflicts).toBe('number');
@@ -103,6 +105,7 @@ describe('Conflict Detection', () => {
                 documentsDeleted: 0,
                 errors: 0,
                 conflicts: 0,
+                integrityErrors: 0,
             };
             stats.conflicts++;
             expect(stats.conflicts).toBe(1);

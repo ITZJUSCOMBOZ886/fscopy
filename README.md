@@ -388,6 +388,7 @@ fscopy --init config.json
 | `--json`                   |       | boolean | `false`              | JSON output for CI/CD                   |
 | `--max-depth`              |       | number  | `0`                  | Max subcollection depth (0 = unlimited) |
 | `--detect-conflicts`       |       | boolean | `false`              | Detect concurrent modifications         |
+| `--verify-integrity`       |       | boolean | `false`              | Verify document integrity with hash     |
 
 ## How It Works
 

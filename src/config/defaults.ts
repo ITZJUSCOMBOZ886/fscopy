@@ -29,6 +29,7 @@ export const defaults: Config = {
     transformSamples: 3,
     detectConflicts: false,
     maxDepth: 0,
+    verifyIntegrity: false,
 };
 
 export const iniTemplate = `; fscopy configuration file

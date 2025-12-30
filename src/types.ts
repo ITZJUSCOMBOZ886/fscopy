@@ -37,6 +37,7 @@ export interface Config {
     transformSamples: number;
     detectConflicts: boolean;
     maxDepth: number;
+    verifyIntegrity: boolean;
 }
 
 export interface ConflictInfo {
@@ -51,6 +52,7 @@ export interface Stats {
     documentsDeleted: number;
     errors: number;
     conflicts: number;
+    integrityErrors: number;
 }
 
 export interface TransferState {
@@ -112,4 +114,5 @@ export interface CliArgs {
     transformSamples?: number;
     detectConflicts?: boolean;
     maxDepth?: number;
+    verifyIntegrity?: boolean;
 }

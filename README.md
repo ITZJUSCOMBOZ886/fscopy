@@ -237,6 +237,8 @@ The transform function receives:
 
 Return the transformed document, or `null` to skip it.
 
+> **Security Warning**: The `--transform` option executes arbitrary code from the specified file. Only use transform files from trusted sources. Never run transforms from untrusted or unverified files as they have full access to your system.
+
 ### Webhook Notifications
 
 Get notified when transfers complete (success or failure):
@@ -392,6 +394,14 @@ fscopy --init config.json
 3. **Batch processing** - Transfers documents in configurable batches
 4. **Retry logic** - Automatic retry with exponential backoff on failures
 5. **Subcollection discovery** - Uses `listCollections()` to find nested data
+
+## Security
+
+- **Transform files execute arbitrary code** - The `--transform` option uses dynamic imports to load and execute JavaScript/TypeScript files. Only use transform files you have written or thoroughly reviewed. Malicious transform files could access your filesystem, network, or credentials.
+
+- **Webhook URLs should use HTTPS** - fscopy warns if you use HTTP webhooks (except localhost). Webhook payloads contain project names and transfer statistics that could be sensitive.
+
+- **Credentials via ADC** - fscopy uses Google Application Default Credentials. Ensure you're authenticated with the correct account before running transfers.
 
 ## Notes
 

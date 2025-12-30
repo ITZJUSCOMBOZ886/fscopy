@@ -1,6 +1,7 @@
 import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test';
 import {
     detectWebhookType,
+    validateWebhookUrl,
     formatSlackPayload,
     formatDiscordPayload,
     sendWebhook,
@@ -26,6 +27,57 @@ function createPayload(overrides: Partial<WebhookPayload> = {}): WebhookPayload 
         ...overrides,
     };
 }
+
+describe('validateWebhookUrl', () => {
+    test('accepts valid HTTPS URLs', () => {
+        const result = validateWebhookUrl('https://example.com/webhook');
+        expect(result.valid).toBe(true);
+        expect(result.warning).toBeUndefined();
+    });
+
+    test('accepts HTTPS Slack webhook', () => {
+        const result = validateWebhookUrl('https://hooks.slack.com/services/T00/B00/xxx');
+        expect(result.valid).toBe(true);
+        expect(result.warning).toBeUndefined();
+    });
+
+    test('accepts HTTPS Discord webhook', () => {
+        const result = validateWebhookUrl('https://discord.com/api/webhooks/123/abc');
+        expect(result.valid).toBe(true);
+        expect(result.warning).toBeUndefined();
+    });
+
+    test('warns for HTTP URLs (non-localhost)', () => {
+        const result = validateWebhookUrl('http://example.com/webhook');
+        expect(result.valid).toBe(true);
+        expect(result.warning).toContain('HTTP instead of HTTPS');
+        expect(result.warning).toContain('unencrypted');
+    });
+
+    test('allows HTTP for localhost', () => {
+        const result = validateWebhookUrl('http://localhost:3000/webhook');
+        expect(result.valid).toBe(true);
+        expect(result.warning).toBeUndefined();
+    });
+
+    test('allows HTTP for 127.0.0.1', () => {
+        const result = validateWebhookUrl('http://127.0.0.1:8080/hook');
+        expect(result.valid).toBe(true);
+        expect(result.warning).toBeUndefined();
+    });
+
+    test('rejects invalid URLs', () => {
+        const result = validateWebhookUrl('not-a-url');
+        expect(result.valid).toBe(false);
+        expect(result.warning).toContain('Invalid webhook URL');
+    });
+
+    test('rejects malformed URLs', () => {
+        const result = validateWebhookUrl('http://');
+        expect(result.valid).toBe(false);
+        expect(result.warning).toContain('Invalid webhook URL');
+    });
+});
 
 describe('detectWebhookType', () => {
     test('detects Slack webhook', () => {

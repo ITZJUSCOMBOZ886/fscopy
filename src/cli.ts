@@ -23,7 +23,7 @@ import { validateConfig } from './config/validator.js';
 import { defaults } from './config/defaults.js';
 import { generateConfigFile } from './config/generator.js';
 import { loadTransferState, saveTransferState, createInitialState, validateStateForResume, deleteTransferState } from './state/index.js';
-import { sendWebhook } from './webhook/index.js';
+import { sendWebhook, validateWebhookUrl } from './webhook/index.js';
 import { countDocuments, transferCollection, clearCollection, deleteOrphanDocuments, processInParallel, getDestCollectionPath, type TransferContext, type CountProgress } from './transfer/index.js';
 import { runInteractiveMode } from './interactive.js';
 
@@ -440,6 +440,18 @@ try {
         console.log('\n❌ Configuration errors:');
         errors.forEach((err) => console.log(`   - ${err}`));
         process.exit(1);
+    }
+
+    // Validate webhook URL if configured
+    if (config.webhook) {
+        const webhookValidation = validateWebhookUrl(config.webhook);
+        if (!webhookValidation.valid) {
+            console.log(`\n❌ ${webhookValidation.warning}`);
+            process.exit(1);
+        }
+        if (webhookValidation.warning) {
+            console.log(`\n⚠️  ${webhookValidation.warning}`);
+        }
     }
 
     // Skip confirmation in interactive mode (already confirmed by selection)

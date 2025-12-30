@@ -22,6 +22,24 @@ export function detectWebhookType(url: string): 'slack' | 'discord' | 'custom' {
     return 'custom';
 }
 
+export function validateWebhookUrl(url: string): { valid: boolean; warning?: string } {
+    try {
+        const parsed = new URL(url);
+        const isLocalhost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+
+        if (parsed.protocol !== 'https:' && !isLocalhost) {
+            return {
+                valid: true,
+                warning: `Webhook URL uses HTTP instead of HTTPS. Data will be sent unencrypted.`,
+            };
+        }
+
+        return { valid: true };
+    } catch {
+        return { valid: false, warning: `Invalid webhook URL: ${url}` };
+    }
+}
+
 export function formatSlackPayload(payload: WebhookPayload): Record<string, unknown> {
     const status = payload.success ? ':white_check_mark: Success' : ':x: Failed';
     const mode = payload.dryRun ? ' (DRY RUN)' : '';

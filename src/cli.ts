@@ -7,7 +7,7 @@ import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 
 import type { Config, CliArgs } from './types.js';
-import { Output } from './utils/output.js';
+import { Output, parseSize } from './utils/output.js';
 import { ensureCredentials } from './utils/credentials.js';
 import { loadConfigFile, mergeConfig } from './config/parser.js';
 import { validateConfig } from './config/validator.js';
@@ -78,6 +78,11 @@ const argv = yargs(hideBin(process.argv))
     .option('log', {
         type: 'string',
         description: 'Path to log file for transfer details',
+    })
+    .option('max-log-size', {
+        type: 'string',
+        description: 'Max log file size before rotation (e.g., "10MB", "1GB"). 0 = no rotation.',
+        default: '0',
     })
     .option('retries', {
         type: 'number',
@@ -265,6 +270,7 @@ async function main(): Promise<void> {
         quiet: argv.quiet,
         json: argv.json,
         logFile: argv.log,
+        maxLogSize: parseSize(argv.maxLogSize),
     });
     output.init();
     output.logInfo('Transfer started', { config: config as unknown as Record<string, unknown> });

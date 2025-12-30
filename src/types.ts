@@ -79,6 +79,7 @@ export interface CliArgs {
     destProject?: string;
     yes: boolean;
     log?: string;
+    maxLogSize?: string;
     retries: number;
     quiet: boolean;
     where?: string[];

@@ -140,6 +140,7 @@ INI format uses `[projects]` section for source/dest and `[transfer]` section fo
 | Doc limit | `-l` | `limit` | `limit` | 0 (none) |
 | Skip confirm | `-y` | - | - | false |
 | Log file | `--log` | - | - | - |
+| Max log size | `--max-log-size` | - | - | 0 (no rotation) |
 | Retries | `--retries` | - | - | 3 |
 | Quiet mode | `-q` | - | - | false |
 | Where filter | `-w` | `where` | `where` | [] |

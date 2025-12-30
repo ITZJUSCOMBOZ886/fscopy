@@ -1,10 +1,38 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import type { Stats, LogEntry } from '../types.js';
+
+/**
+ * Parse a size string like "10MB" or "1GB" into bytes.
+ * Supports: B, KB, MB, GB (case insensitive)
+ * Returns 0 for invalid or "0" input.
+ */
+export function parseSize(sizeStr: string | undefined): number {
+    if (!sizeStr || sizeStr === '0') return 0;
+
+    const sizeRegex = /^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB)?$/i;
+    const match = sizeRegex.exec(sizeStr.trim());
+    if (!match) return 0;
+
+    const value = Number.parseFloat(match[1]);
+    const unit = (match[2] || 'B').toUpperCase();
+
+    const multipliers: Record<string, number> = {
+        'B': 1,
+        'KB': 1024,
+        'MB': 1024 * 1024,
+        'GB': 1024 * 1024 * 1024,
+    };
+
+    return Math.floor(value * (multipliers[unit] || 1));
+}
 
 export interface OutputOptions {
     quiet: boolean;
     json: boolean;
     logFile?: string;
+    maxLogSize?: number; // Max log file size in bytes (0 = unlimited)
+    maxLogFiles?: number; // Max number of rotated log files to keep
 }
 
 /**
@@ -21,6 +49,8 @@ export class Output {
             quiet: options.quiet ?? false,
             json: options.json ?? false,
             logFile: options.logFile,
+            maxLogSize: options.maxLogSize ?? 0,
+            maxLogFiles: options.maxLogFiles ?? 5,
         };
         this.startTime = new Date();
     }
@@ -31,9 +61,49 @@ export class Output {
 
     init(): void {
         if (this.options.logFile) {
+            this.rotateLogIfNeeded();
             const header = `# fscopy transfer log\n# Started: ${this.startTime.toISOString()}\n\n`;
             fs.writeFileSync(this.options.logFile, header);
         }
+    }
+
+    /**
+     * Rotate log file if it exceeds maxLogSize.
+     * Creates numbered backups: log.1.ext, log.2.ext, etc.
+     */
+    private rotateLogIfNeeded(): void {
+        const logFile = this.options.logFile;
+        const maxSize = this.options.maxLogSize ?? 0;
+        const maxFiles = this.options.maxLogFiles ?? 5;
+
+        if (!logFile || maxSize <= 0) return;
+        if (!fs.existsSync(logFile)) return;
+
+        const stats = fs.statSync(logFile);
+        if (stats.size < maxSize) return;
+
+        const dir = path.dirname(logFile);
+        const ext = path.extname(logFile);
+        const base = path.basename(logFile, ext);
+
+        // Delete oldest backup if at max
+        const oldestPath = path.join(dir, `${base}.${maxFiles}${ext}`);
+        if (fs.existsSync(oldestPath)) {
+            fs.unlinkSync(oldestPath);
+        }
+
+        // Shift existing backups: .4 -> .5, .3 -> .4, etc.
+        for (let i = maxFiles - 1; i >= 1; i--) {
+            const from = path.join(dir, `${base}.${i}${ext}`);
+            const to = path.join(dir, `${base}.${i + 1}${ext}`);
+            if (fs.existsSync(from)) {
+                fs.renameSync(from, to);
+            }
+        }
+
+        // Rename current to .1
+        const backupPath = path.join(dir, `${base}.1${ext}`);
+        fs.renameSync(logFile, backupPath);
     }
 
     // ==========================================================================

@@ -16,6 +16,7 @@ import readline from 'node:readline';
 import type { Config, Stats, TransferState, TransformFunction, CliArgs } from './types.js';
 import { Logger } from './utils/logger.js';
 import { ensureCredentials } from './utils/credentials.js';
+import { formatFirebaseError } from './utils/errors.js';
 import { loadConfigFile, mergeConfig } from './config/parser.js';
 import { validateConfig } from './config/validator.js';
 import { defaults } from './config/defaults.js';
@@ -166,6 +167,11 @@ const argv = yargs(hideBin(process.argv))
         type: 'string',
         description: 'Path to state file for resume (default: .fscopy-state.json)',
         default: '.fscopy-state.json',
+    })
+    .option('verify', {
+        type: 'boolean',
+        description: 'Verify document counts after transfer',
+        default: false,
     })
     .example('$0 --init config.ini', 'Generate INI config template (default)')
     .example('$0 --init config.json', 'Generate JSON config template')
@@ -349,21 +355,9 @@ async function checkDatabaseConnectivity(
         console.log(`   ✓ Source (${config.sourceProject}) - connected`);
     } catch (error) {
         const err = error as Error & { code?: string };
-        let hint = '';
-
-        if (err.code === 'app/invalid-credential' || err.message.includes('credential')) {
-            hint = '\n   Hint: Run "gcloud auth application-default login" to authenticate';
-        } else if (err.code === 'unavailable' || err.message.includes('UNAVAILABLE')) {
-            hint = '\n   Hint: Check your internet connection';
-        } else if (err.message.includes('not found') || err.message.includes('NOT_FOUND')) {
-            hint = '\n   Hint: Verify the project ID is correct';
-        } else if (err.message.includes('permission') || err.message.includes('PERMISSION_DENIED')) {
-            hint = '\n   Hint: Ensure you have Firestore access on this project';
-        }
-
-        throw new Error(
-            `Cannot connect to source database (${config.sourceProject}): ${err.message}${hint}`
-        );
+        const errorInfo = formatFirebaseError(err);
+        const hint = errorInfo.suggestion ? `\n   Hint: ${errorInfo.suggestion}` : '';
+        throw new Error(`Cannot connect to source database (${config.sourceProject}): ${errorInfo.message}${hint}`);
     }
 
     // Check destination database (only if different from source)
@@ -373,21 +367,9 @@ async function checkDatabaseConnectivity(
             console.log(`   ✓ Destination (${config.destProject}) - connected`);
         } catch (error) {
             const err = error as Error & { code?: string };
-            let hint = '';
-
-            if (err.code === 'app/invalid-credential' || err.message.includes('credential')) {
-                hint = '\n   Hint: Run "gcloud auth application-default login" to authenticate';
-            } else if (err.code === 'unavailable' || err.message.includes('UNAVAILABLE')) {
-                hint = '\n   Hint: Check your internet connection';
-            } else if (err.message.includes('not found') || err.message.includes('NOT_FOUND')) {
-                hint = '\n   Hint: Verify the project ID is correct';
-            } else if (err.message.includes('permission') || err.message.includes('PERMISSION_DENIED')) {
-                hint = '\n   Hint: Ensure you have Firestore access on this project';
-            }
-
-            throw new Error(
-                `Cannot connect to destination database (${config.destProject}): ${err.message}${hint}`
-            );
+            const errorInfo = formatFirebaseError(err);
+            const hint = errorInfo.suggestion ? `\n   Hint: ${errorInfo.suggestion}` : '';
+            throw new Error(`Cannot connect to destination database (${config.destProject}): ${errorInfo.message}${hint}`);
         }
     } else {
         console.log(`   ✓ Destination (same as source) - connected`);
@@ -497,6 +479,42 @@ try {
     // Verify database connectivity before proceeding
     await checkDatabaseConnectivity(sourceDb, destDb, config);
 
+    // Validate transform with sample documents (in dry-run mode)
+    if (transformFn && config.dryRun) {
+        console.log('🧪 Validating transform with sample documents...');
+        let samplesTested = 0;
+        let samplesSkipped = 0;
+        let samplesErrors = 0;
+
+        for (const collection of config.collections) {
+            const snapshot = await sourceDb.collection(collection).limit(3).get();
+            for (const doc of snapshot.docs) {
+                try {
+                    const result = transformFn(doc.data() as Record<string, unknown>, {
+                        id: doc.id,
+                        path: `${collection}/${doc.id}`,
+                    });
+                    if (result === null) {
+                        samplesSkipped++;
+                    } else {
+                        samplesTested++;
+                    }
+                } catch (error) {
+                    samplesErrors++;
+                    const err = error as Error;
+                    console.error(`   ⚠️  Transform error on ${collection}/${doc.id}: ${err.message}`);
+                }
+            }
+        }
+
+        if (samplesErrors > 0) {
+            console.log(`   ❌ ${samplesErrors} sample(s) failed - review your transform function`);
+        } else if (samplesTested > 0 || samplesSkipped > 0) {
+            console.log(`   ✓ Tested ${samplesTested} sample(s), ${samplesSkipped} would be skipped`);
+        }
+        console.log('');
+    }
+
     if (!config.resume) {
         stats = {
             collectionsProcessed: 0,
@@ -543,12 +561,35 @@ try {
 
         if (totalDocs > 0) {
             progressBar = new cliProgress.SingleBar({
-                format: '📦 Progress |{bar}| {percentage}% | {value}/{total} docs | ETA: {eta}s',
+                format: '📦 Progress |{bar}| {percentage}% | {value}/{total} docs | {speed} docs/s | ETA: {eta}s',
                 barCompleteChar: '█',
                 barIncompleteChar: '░',
                 hideCursor: true,
             });
-            progressBar.start(totalDocs, 0);
+            progressBar.start(totalDocs, 0, { speed: '0' });
+
+            // Track speed using transfer stats
+            let lastDocsTransferred = 0;
+            let lastTime = Date.now();
+
+            const speedInterval = setInterval(() => {
+                if (progressBar) {
+                    const now = Date.now();
+                    const timeDiff = (now - lastTime) / 1000;
+                    const currentDocs = stats.documentsTransferred;
+
+                    if (timeDiff > 0) {
+                        const docsDiff = currentDocs - lastDocsTransferred;
+                        const speed = Math.round(docsDiff / timeDiff);
+                        lastDocsTransferred = currentDocs;
+                        lastTime = now;
+                        progressBar.update({ speed: String(speed) });
+                    }
+                }
+            }, 500);
+
+            // Store interval for cleanup
+            (progressBar as unknown as { _speedInterval: NodeJS.Timeout })._speedInterval = speedInterval;
         }
     }
 
@@ -595,6 +636,11 @@ try {
     }
 
     if (progressBar) {
+        // Clear speed update interval
+        const interval = (progressBar as unknown as { _speedInterval?: NodeJS.Timeout })._speedInterval;
+        if (interval) {
+            clearInterval(interval);
+        }
         progressBar.stop();
     }
 
@@ -639,6 +685,37 @@ try {
 
     if (argv.log) {
         console.log(`Log file: ${argv.log}`);
+    }
+
+    // Verify transfer if enabled (and not dry-run)
+    if (config.verify && !config.dryRun) {
+        console.log('\n🔍 Verifying transfer...');
+        let verifyPassed = true;
+
+        for (const collection of config.collections) {
+            const destCollection = getDestCollectionPath(collection, config.renameCollection);
+
+            // Count source documents
+            const sourceCount = await sourceDb.collection(collection).count().get();
+            const sourceTotal = sourceCount.data().count;
+
+            // Count destination documents
+            const destCount = await destDb.collection(destCollection).count().get();
+            const destTotal = destCount.data().count;
+
+            if (sourceTotal === destTotal) {
+                console.log(`   ✓ ${collection}: ${sourceTotal} docs (matched)`);
+            } else {
+                console.log(`   ⚠️  ${collection}: source=${sourceTotal}, dest=${destTotal} (mismatch)`);
+                verifyPassed = false;
+            }
+        }
+
+        if (verifyPassed) {
+            console.log('   ✓ Verification passed');
+        } else {
+            console.log('   ⚠️  Verification found mismatches');
+        }
     }
 
     if (config.dryRun) {

@@ -30,6 +30,7 @@ export interface Config {
     webhook: string | null;
     resume: boolean;
     stateFile: string;
+    verify: boolean;
 }
 
 export interface Stats {
@@ -90,4 +91,5 @@ export interface CliArgs {
     webhook?: string;
     resume?: boolean;
     stateFile?: string;
+    verify?: boolean;
 }

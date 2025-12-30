@@ -253,5 +253,6 @@ export function mergeConfig(
         webhook: cliArgs.webhook ?? fileConfig.webhook ?? defaultConfig.webhook,
         resume: cliArgs.resume ?? defaultConfig.resume,
         stateFile: cliArgs.stateFile ?? defaultConfig.stateFile,
+        verify: cliArgs.verify ?? defaultConfig.verify,
     };
 }

@@ -22,6 +22,7 @@ export const defaults: Config = {
     webhook: null,
     resume: false,
     stateFile: '.fscopy-state.json',
+    verify: false,
 };
 
 export const iniTemplate = `; fscopy configuration file

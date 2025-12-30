@@ -11,8 +11,9 @@ import {
     isDocCompleted,
     markDocCompleted,
     STATE_VERSION,
+    StateSaver,
 } from '../state/index.js';
-import type { Config, TransferState } from '../types.js';
+import type { Config, TransferState, Stats } from '../types.js';
 
 describe('State Management', () => {
     let tempDir: string;
@@ -310,6 +311,116 @@ describe('State Management', () => {
             markDocCompleted(state, 'users', 'doc2');
 
             expect(state.completedDocs.users).toEqual(['doc1', 'doc2']);
+        });
+    });
+
+    describe('StateSaver', () => {
+        const createTestState = (): TransferState => ({
+            version: STATE_VERSION,
+            sourceProject: 'source',
+            destProject: 'dest',
+            collections: ['users'],
+            startedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            completedDocs: {},
+            stats: { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0 },
+        });
+
+        const createTestStats = (): Stats => ({
+            collectionsProcessed: 1,
+            documentsTransferred: 10,
+            documentsDeleted: 0,
+            errors: 0,
+        });
+
+        test('does not save immediately on first batch', () => {
+            const state = createTestState();
+            const saver = new StateSaver(stateFile, state, { batchInterval: 5 });
+
+            saver.markBatchCompleted('users', ['doc1'], createTestStats());
+
+            // Should not save yet (only 1 batch, threshold is 5)
+            expect(fs.existsSync(stateFile)).toBe(false);
+            expect(state.completedDocs.users).toEqual(['doc1']);
+        });
+
+        test('saves after batch interval is reached', () => {
+            const state = createTestState();
+            const saver = new StateSaver(stateFile, state, { batchInterval: 3 });
+
+            saver.markBatchCompleted('users', ['doc1'], createTestStats());
+            saver.markBatchCompleted('users', ['doc2'], createTestStats());
+            expect(fs.existsSync(stateFile)).toBe(false);
+
+            saver.markBatchCompleted('users', ['doc3'], createTestStats());
+            expect(fs.existsSync(stateFile)).toBe(true);
+        });
+
+        test('saves after time interval', async () => {
+            const state = createTestState();
+            const saver = new StateSaver(stateFile, state, { batchInterval: 100, timeInterval: 50 });
+
+            saver.markBatchCompleted('users', ['doc1'], createTestStats());
+            expect(fs.existsSync(stateFile)).toBe(false);
+
+            // Wait for time interval to pass
+            await new Promise((resolve) => setTimeout(resolve, 60));
+
+            saver.markBatchCompleted('users', ['doc2'], createTestStats());
+            expect(fs.existsSync(stateFile)).toBe(true);
+        });
+
+        test('flush saves pending changes', () => {
+            const state = createTestState();
+            const saver = new StateSaver(stateFile, state, { batchInterval: 100 });
+
+            saver.markBatchCompleted('users', ['doc1', 'doc2'], createTestStats());
+            expect(fs.existsSync(stateFile)).toBe(false);
+
+            saver.flush();
+            expect(fs.existsSync(stateFile)).toBe(true);
+
+            const loaded = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
+            expect(loaded.completedDocs.users).toEqual(['doc1', 'doc2']);
+        });
+
+        test('flush does nothing if no pending changes', () => {
+            const state = createTestState();
+            const saver = new StateSaver(stateFile, state, { batchInterval: 1 });
+
+            // This will trigger immediate save
+            saver.markBatchCompleted('users', ['doc1'], createTestStats());
+            expect(fs.existsSync(stateFile)).toBe(true);
+
+            const mtime1 = fs.statSync(stateFile).mtimeMs;
+
+            // flush should not write again
+            saver.flush();
+            const mtime2 = fs.statSync(stateFile).mtimeMs;
+
+            expect(mtime1).toBe(mtime2);
+        });
+
+        test('getState returns the underlying state', () => {
+            const state = createTestState();
+            const saver = new StateSaver(stateFile, state);
+
+            expect(saver.getState()).toBe(state);
+        });
+
+        test('updates stats on batch completion', () => {
+            const state = createTestState();
+            const saver = new StateSaver(stateFile, state, { batchInterval: 1 });
+            const stats: Stats = {
+                collectionsProcessed: 5,
+                documentsTransferred: 50,
+                documentsDeleted: 10,
+                errors: 2,
+            };
+
+            saver.markBatchCompleted('users', ['doc1'], stats);
+
+            expect(state.stats).toEqual(stats);
         });
     });
 });

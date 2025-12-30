@@ -1,7 +1,98 @@
 import fs from 'node:fs';
-import type { Config, TransferState } from '../types.js';
+import type { Config, TransferState, Stats } from '../types.js';
 
 export const STATE_VERSION = 1;
+
+export interface StateSaverOptions {
+    /** Save every N batches (default: 10) */
+    batchInterval?: number;
+    /** Save every N milliseconds (default: 5000) */
+    timeInterval?: number;
+}
+
+const DEFAULT_BATCH_INTERVAL = 10;
+const DEFAULT_TIME_INTERVAL = 5000;
+
+/**
+ * Throttled state saver to reduce I/O overhead.
+ * Saves state every N batches OR after X milliseconds, whichever comes first.
+ */
+export class StateSaver {
+    private lastSaveTime: number = Date.now();
+    private batchesSinceLastSave: number = 0;
+    private readonly batchInterval: number;
+    private readonly timeInterval: number;
+    private dirty: boolean = false;
+
+    constructor(
+        private readonly stateFile: string,
+        private readonly state: TransferState,
+        options: StateSaverOptions = {}
+    ) {
+        this.batchInterval = options.batchInterval ?? DEFAULT_BATCH_INTERVAL;
+        this.timeInterval = options.timeInterval ?? DEFAULT_TIME_INTERVAL;
+    }
+
+    /**
+     * Mark documents as completed and update stats.
+     * Saves to disk if thresholds are met.
+     */
+    markBatchCompleted(collectionPath: string, docIds: string[], stats: Stats): void {
+        for (const docId of docIds) {
+            markDocCompleted(this.state, collectionPath, docId);
+        }
+        this.state.stats = { ...stats };
+        this.dirty = true;
+        this.batchesSinceLastSave++;
+
+        if (this.shouldSave()) {
+            this.save();
+        }
+    }
+
+    /**
+     * Check if we should save based on batch count or time elapsed.
+     */
+    private shouldSave(): boolean {
+        if (this.batchesSinceLastSave >= this.batchInterval) {
+            return true;
+        }
+
+        const elapsed = Date.now() - this.lastSaveTime;
+        if (elapsed >= this.timeInterval) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Save state to disk and reset counters.
+     */
+    private save(): void {
+        saveTransferState(this.stateFile, this.state);
+        this.lastSaveTime = Date.now();
+        this.batchesSinceLastSave = 0;
+        this.dirty = false;
+    }
+
+    /**
+     * Force save if there are unsaved changes.
+     * Call this before shutdown or on completion.
+     */
+    flush(): void {
+        if (this.dirty) {
+            this.save();
+        }
+    }
+
+    /**
+     * Get the underlying state object.
+     */
+    getState(): TransferState {
+        return this.state;
+    }
+}
 
 export function loadTransferState(stateFile: string): TransferState | null {
     try {

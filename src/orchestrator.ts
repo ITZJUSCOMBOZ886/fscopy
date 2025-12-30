@@ -4,7 +4,7 @@ import type { Config, Stats, TransferState, TransformFunction, CliArgs } from '.
 import { Output } from './utils/output.js';
 import { RateLimiter } from './utils/rate-limiter.js';
 import { ProgressBarWrapper } from './utils/progress.js';
-import { loadTransferState, saveTransferState, createInitialState, validateStateForResume, deleteTransferState } from './state/index.js';
+import { loadTransferState, saveTransferState, createInitialState, validateStateForResume, deleteTransferState, StateSaver } from './state/index.js';
 import { sendWebhook } from './webhook/index.js';
 import { countDocuments, transferCollection, clearCollection, deleteOrphanDocuments, processInParallel, getDestCollectionPath, type TransferContext, type CountProgress } from './transfer/index.js';
 import { initializeFirebase, checkDatabaseConnectivity, cleanupFirebase } from './firebase/index.js';
@@ -148,11 +148,14 @@ export async function runTransfer(config: Config, argv: CliArgs, output: Output)
             output.info(`⏱️  Rate limiting enabled: ${config.rateLimit} docs/s\n`);
         }
 
+        const stateSaver = transferState ? new StateSaver(config.stateFile, transferState) : null;
+
         const ctx: TransferContext = {
-            sourceDb, destDb, config, stats: currentStats, output, progressBar, transformFn, state: transferState, rateLimiter
+            sourceDb, destDb, config, stats: currentStats, output, progressBar, transformFn, stateSaver, rateLimiter
         };
 
         await executeTransfer(ctx, output);
+        stateSaver?.flush();
         cleanupProgressBar(progressBar);
 
         if (config.deleteMissing) {

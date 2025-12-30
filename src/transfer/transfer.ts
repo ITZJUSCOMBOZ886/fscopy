@@ -1,12 +1,13 @@
 import type { Firestore, WriteBatch, Query, QueryDocumentSnapshot } from 'firebase-admin/firestore';
-import type { Config, Stats, TransferState, TransformFunction } from '../types.js';
+import type { Config, Stats, TransformFunction } from '../types.js';
 import type { Output } from '../utils/output.js';
 import type { RateLimiter } from '../utils/rate-limiter.js';
 import type { ProgressBarWrapper } from '../utils/progress.js';
+import type { StateSaver } from '../state/index.js';
 import { withRetry } from '../utils/retry.js';
 import { matchesExcludePattern } from '../utils/patterns.js';
 import { estimateDocumentSize, formatBytes, FIRESTORE_MAX_DOC_SIZE } from '../utils/doc-size.js';
-import { isDocCompleted, markDocCompleted, saveTransferState } from '../state/index.js';
+import { isDocCompleted } from '../state/index.js';
 import { getSubcollections, getDestCollectionPath, getDestDocId } from './helpers.js';
 
 export interface TransferContext {
@@ -17,7 +18,7 @@ export interface TransferContext {
     output: Output;
     progressBar: ProgressBarWrapper;
     transformFn: TransformFunction | null;
-    state: TransferState | null;
+    stateSaver: StateSaver | null;
     rateLimiter: RateLimiter | null;
 }
 
@@ -137,10 +138,10 @@ function processDocument(
     collectionPath: string,
     destCollectionPath: string
 ): DocProcessResult {
-    const { config, output, state, stats, transformFn } = ctx;
+    const { config, output, stateSaver, stats, transformFn } = ctx;
 
     // Skip if already completed (resume mode)
-    if (state && isDocCompleted(state, collectionPath, doc.id)) {
+    if (stateSaver && isDocCompleted(stateSaver.getState(), collectionPath, doc.id)) {
         stats.documentsTransferred++;
         return { skip: true, markCompleted: false };
     }
@@ -176,7 +177,7 @@ async function commitBatchWithRetry(
     ctx: TransferContext,
     collectionPath: string
 ): Promise<void> {
-    const { config, output, state, stats, rateLimiter } = ctx;
+    const { config, output, stateSaver, stats, rateLimiter } = ctx;
 
     if (rateLimiter) {
         await rateLimiter.acquire(batchDocIds.length);
@@ -189,12 +190,8 @@ async function commitBatchWithRetry(
         },
     });
 
-    if (state && batchDocIds.length > 0) {
-        for (const docId of batchDocIds) {
-            markDocCompleted(state, collectionPath, docId);
-        }
-        state.stats = { ...stats };
-        saveTransferState(config.stateFile, state);
+    if (stateSaver && batchDocIds.length > 0) {
+        stateSaver.markBatchCompleted(collectionPath, batchDocIds, stats);
     }
 }
 

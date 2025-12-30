@@ -1,0 +1,76 @@
+import admin from 'firebase-admin';
+import type { Firestore } from 'firebase-admin/firestore';
+import type { Config } from '../types.js';
+import { formatFirebaseError } from '../utils/errors.js';
+
+let sourceApp: admin.app.App | null = null;
+let destApp: admin.app.App | null = null;
+
+export interface FirebaseConnections {
+    sourceDb: Firestore;
+    destDb: Firestore;
+}
+
+export function initializeFirebase(config: Config): FirebaseConnections {
+    sourceApp = admin.initializeApp(
+        {
+            credential: admin.credential.applicationDefault(),
+            projectId: config.sourceProject!,
+        },
+        'source'
+    );
+
+    destApp = admin.initializeApp(
+        {
+            credential: admin.credential.applicationDefault(),
+            projectId: config.destProject!,
+        },
+        'dest'
+    );
+
+    return {
+        sourceDb: sourceApp.firestore(),
+        destDb: destApp.firestore(),
+    };
+}
+
+export async function checkDatabaseConnectivity(
+    sourceDb: Firestore,
+    destDb: Firestore,
+    config: Config
+): Promise<void> {
+    console.log('🔌 Checking database connectivity...');
+
+    // Check source database
+    try {
+        await sourceDb.listCollections();
+        console.log(`   ✓ Source (${config.sourceProject}) - connected`);
+    } catch (error) {
+        const err = error as Error & { code?: string };
+        const errorInfo = formatFirebaseError(err);
+        const hint = errorInfo.suggestion ? `\n   Hint: ${errorInfo.suggestion}` : '';
+        throw new Error(`Cannot connect to source database (${config.sourceProject}): ${errorInfo.message}${hint}`);
+    }
+
+    // Check destination database (only if different from source)
+    if (config.sourceProject !== config.destProject) {
+        try {
+            await destDb.listCollections();
+            console.log(`   ✓ Destination (${config.destProject}) - connected`);
+        } catch (error) {
+            const err = error as Error & { code?: string };
+            const errorInfo = formatFirebaseError(err);
+            const hint = errorInfo.suggestion ? `\n   Hint: ${errorInfo.suggestion}` : '';
+            throw new Error(`Cannot connect to destination database (${config.destProject}): ${errorInfo.message}${hint}`);
+        }
+    } else {
+        console.log(`   ✓ Destination (same as source) - connected`);
+    }
+
+    console.log('');
+}
+
+export async function cleanupFirebase(): Promise<void> {
+    if (sourceApp) await sourceApp.delete();
+    if (destApp) await destApp.delete();
+}

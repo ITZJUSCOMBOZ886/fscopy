@@ -70,9 +70,10 @@ Modular TypeScript CLI with shebang `#!/usr/bin/env bun`.
 
 **Directory structure:**
 
-```
+```text
 src/
-├── cli.ts              # Entry point, CLI args, main flow (~700 lines)
+├── cli.ts              # Entry point, CLI args parsing (~280 lines)
+├── orchestrator.ts     # Main transfer orchestration logic (~360 lines)
 ├── types.ts            # Shared TypeScript interfaces
 ├── interactive.ts      # Interactive mode prompts
 ├── config/
@@ -80,6 +81,10 @@ src/
 │   ├── generator.ts    # Config file generation (--init)
 │   ├── parser.ts       # INI/JSON parsing, config merging
 │   └── validator.ts    # Config validation
+├── firebase/
+│   └── index.ts        # Firebase init, connectivity check, cleanup
+├── output/
+│   └── display.ts      # Config display, confirmation, summary output
 ├── state/
 │   └── index.ts        # Resume support (load/save state, atomic writes)
 ├── transfer/
@@ -88,6 +93,8 @@ src/
 │   ├── count.ts        # Document counting with progress callbacks
 │   ├── clear.ts        # clearCollection, deleteOrphanDocuments
 │   └── transfer.ts     # Main transfer logic with transform support
+├── transform/
+│   └── loader.ts       # Dynamic transform function loading
 ├── utils/
 │   ├── credentials.ts  # ADC check before Firebase init
 │   ├── doc-size.ts     # Document size estimation (1MB limit check)
@@ -98,9 +105,7 @@ src/
 │   └── retry.ts        # Exponential backoff retry logic
 ├── webhook/
 │   └── index.ts        # Slack, Discord, custom webhook notifications
-└── __tests__/
-    ├── config.test.ts  # Config parsing and validation tests
-    └── retry.test.ts   # Retry logic tests
+└── __tests__/          # Test files for all modules
 ```
 
 **Config resolution** (priority: CLI > config file > defaults):
@@ -124,34 +129,34 @@ src/
 
 INI format uses `[projects]` section for source/dest and `[transfer]` section for options.
 
-| Option         | CLI                | INI key (section)          | JSON key                | Default  |
-| -------------- | ------------------ | -------------------------- | ----------------------- | -------- |
-| Source project | `--source-project` | `source` ([projects])      | `sourceProject`         | required |
-| Dest project   | `--dest-project`   | `dest` ([projects])        | `destProject`           | required |
-| Collections    | `-c`               | `collections` ([transfer]) | `collections`           | required |
-| Subcollections | `-s`               | `includeSubcollections`    | `includeSubcollections` | false    |
-| Dry run        | `-d`               | `dryRun`                   | `dryRun`                | true     |
-| Batch size     | `-b`               | `batchSize`                | `batchSize`             | 500      |
-| Doc limit      | `-l`               | `limit`                    | `limit`                 | 0 (none) |
-| Skip confirm   | `-y`               | -                          | -                       | false    |
-| Log file       | `--log`            | -                          | -                       | -        |
-| Retries        | `--retries`        | -                          | -                       | 3        |
-| Quiet mode     | `-q`               | -                          | -                       | false    |
-| Where filter   | `-w`               | `where` ([options])        | `where`                 | []       |
-| Exclude        | `-x`               | `exclude` ([options])      | `exclude`               | []       |
-| Merge mode     | `-m`               | `merge` ([options])        | `merge`                 | false    |
-| Parallel       | `-p`               | `parallel` ([options])     | `parallel`              | 1        |
-| Clear dest     | `--clear`          | `clear` ([options])        | `clear`                 | false    |
-| Delete missing | `--delete-missing` | `deleteMissing` ([options])| `deleteMissing`         | false    |
-| Interactive    | `-i`               | -                          | -                       | false    |
-| Transform      | `-t`               | `transform` ([options])    | `transform`             | null     |
-| Rename coll.   | `-r`               | `renameCollection` ([options]) | `renameCollection`  | {}       |
-| ID prefix      | `--id-prefix`      | `idPrefix` ([options])     | `idPrefix`              | null     |
-| ID suffix      | `--id-suffix`      | `idSuffix` ([options])     | `idSuffix`              | null     |
-| Webhook        | `--webhook`        | `webhook` ([options])      | `webhook`               | null     |
-| Resume         | `--resume`         | -                          | -                       | false    |
-| State file     | `--state-file`     | -                          | -                       | .fscopy-state.json |
-| Verify         | `--verify`         | -                          | -                       | false    |
-| Rate limit     | `--rate-limit`     | -                          | -                       | 0 (none) |
-| Skip oversized | `--skip-oversized` | -                          | -                       | false    |
-| JSON output    | `--json`           | -                          | -                       | false    |
+| Option | CLI | INI key | JSON key | Default |
+| ------ | --- | ------- | -------- | ------- |
+| Source project | `--source-project` | `source` | `sourceProject` | required |
+| Dest project | `--dest-project` | `dest` | `destProject` | required |
+| Collections | `-c` | `collections` | `collections` | required |
+| Subcollections | `-s` | `includeSubcollections` | `includeSubcollections` | false |
+| Dry run | `-d` | `dryRun` | `dryRun` | true |
+| Batch size | `-b` | `batchSize` | `batchSize` | 500 |
+| Doc limit | `-l` | `limit` | `limit` | 0 (none) |
+| Skip confirm | `-y` | - | - | false |
+| Log file | `--log` | - | - | - |
+| Retries | `--retries` | - | - | 3 |
+| Quiet mode | `-q` | - | - | false |
+| Where filter | `-w` | `where` | `where` | [] |
+| Exclude | `-x` | `exclude` | `exclude` | [] |
+| Merge mode | `-m` | `merge` | `merge` | false |
+| Parallel | `-p` | `parallel` | `parallel` | 1 |
+| Clear dest | `--clear` | `clear` | `clear` | false |
+| Delete missing | `--delete-missing` | `deleteMissing` | `deleteMissing` | false |
+| Interactive | `-i` | - | - | false |
+| Transform | `-t` | `transform` | `transform` | null |
+| Rename coll. | `-r` | `renameCollection` | `renameCollection` | {} |
+| ID prefix | `--id-prefix` | `idPrefix` | `idPrefix` | null |
+| ID suffix | `--id-suffix` | `idSuffix` | `idSuffix` | null |
+| Webhook | `--webhook` | `webhook` | `webhook` | null |
+| Resume | `--resume` | - | - | false |
+| State file | `--state-file` | - | - | `.fscopy-state.json` |
+| Verify | `--verify` | - | - | false |
+| Rate limit | `--rate-limit` | - | - | 0 (none) |
+| Skip oversized | `--skip-oversized` | - | - | false |
+| JSON output | `--json` | - | - | false |

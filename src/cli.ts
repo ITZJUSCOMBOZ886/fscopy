@@ -1388,7 +1388,26 @@ function loadTransferState(stateFile: string): TransferState | null {
 
 function saveTransferState(stateFile: string, state: TransferState): void {
     state.updatedAt = new Date().toISOString();
-    fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
+    const content = JSON.stringify(state, null, 2);
+    const tempFile = `${stateFile}.tmp`;
+
+    try {
+        // Write to temp file first (atomic write pattern)
+        fs.writeFileSync(tempFile, content);
+        // Rename is atomic on most filesystems
+        fs.renameSync(tempFile, stateFile);
+    } catch (error) {
+        // Clean up temp file if it exists
+        try {
+            if (fs.existsSync(tempFile)) {
+                fs.unlinkSync(tempFile);
+            }
+        } catch {
+            // Ignore cleanup errors
+        }
+        // Log but don't throw - state save failure shouldn't stop the transfer
+        console.error(`⚠️  Failed to save state file: ${(error as Error).message}`);
+    }
 }
 
 function deleteTransferState(stateFile: string): void {
@@ -1742,24 +1761,38 @@ async function transferCollection(
             // Apply transform if provided
             let docData = doc.data() as Record<string, unknown>;
             if (transformFn) {
-                const transformed = transformFn(docData, {
-                    id: doc.id,
-                    path: `${collectionPath}/${doc.id}`,
-                });
-                if (transformed === null) {
-                    // Skip this document if transform returns null
-                    logger.info('Skipped document (transform returned null)', {
-                        collection: collectionPath,
-                        docId: doc.id,
+                try {
+                    const transformed = transformFn(docData, {
+                        id: doc.id,
+                        path: `${collectionPath}/${doc.id}`,
                     });
+                    if (transformed === null) {
+                        // Skip this document if transform returns null
+                        logger.info('Skipped document (transform returned null)', {
+                            collection: collectionPath,
+                            docId: doc.id,
+                        });
+                        if (progressBar) {
+                            progressBar.increment();
+                        }
+                        // Mark as completed even if skipped
+                        batchDocIds.push(doc.id);
+                        continue;
+                    }
+                    docData = transformed;
+                } catch (transformError) {
+                    const errMsg = transformError instanceof Error ? transformError.message : String(transformError);
+                    logger.error(`Transform failed for document ${doc.id}`, {
+                        collection: collectionPath,
+                        error: errMsg,
+                    });
+                    stats.errors++;
                     if (progressBar) {
                         progressBar.increment();
                     }
-                    // Mark as completed even if skipped
-                    batchDocIds.push(doc.id);
+                    // Skip this document but continue with others
                     continue;
                 }
-                docData = transformed;
             }
 
             if (!config.dryRun) {
@@ -1829,40 +1862,56 @@ async function transferCollection(
 // Parallel Processing Helper
 // =============================================================================
 
+interface ParallelResult<R> {
+    results: R[];
+    errors: Error[];
+}
+
 async function processInParallel<T, R>(
     items: T[],
     concurrency: number,
     processor: (item: T) => Promise<R>
-): Promise<R[]> {
+): Promise<ParallelResult<R>> {
     const results: R[] = [];
-    const executing: Promise<void>[] = [];
+    const errors: Error[] = [];
+    const queue = [...items];
+    const executing: Set<Promise<void>> = new Set();
 
-    for (const item of items) {
-        const promise = processor(item).then((result) => {
+    const processNext = async (): Promise<void> => {
+        if (queue.length === 0) return;
+
+        const item = queue.shift()!;
+        try {
+            const result = await processor(item);
             results.push(result);
+        } catch (error) {
+            errors.push(error instanceof Error ? error : new Error(String(error)));
+        }
+    };
+
+    // Start initial batch of concurrent tasks
+    while (executing.size < concurrency && queue.length > 0) {
+        const promise = processNext().then(() => {
+            executing.delete(promise);
         });
+        executing.add(promise);
+    }
 
-        executing.push(promise);
-
-        if (executing.length >= concurrency) {
+    // Process remaining items as slots become available
+    while (queue.length > 0 || executing.size > 0) {
+        if (executing.size > 0) {
             await Promise.race(executing);
-            // Remove completed promises
-            for (let i = executing.length - 1; i >= 0; i--) {
-                const p = executing[i];
-                // Check if promise is settled by racing with resolved promise
-                const isSettled = await Promise.race([
-                    p.then(() => true).catch(() => true),
-                    Promise.resolve(false),
-                ]);
-                if (isSettled) {
-                    executing.splice(i, 1);
-                }
-            }
+        }
+        // Fill up to concurrency limit
+        while (executing.size < concurrency && queue.length > 0) {
+            const promise = processNext().then(() => {
+                executing.delete(promise);
+            });
+            executing.add(promise);
         }
     }
 
-    await Promise.all(executing);
-    return results;
+    return { results, errors };
 }
 
 // =============================================================================
@@ -2038,12 +2087,24 @@ try {
 
     // Transfer collections (with optional parallelism)
     if (config.parallel > 1) {
-        await processInParallel(config.collections, config.parallel, (collection) =>
+        const { errors } = await processInParallel(config.collections, config.parallel, (collection) =>
             transferCollection(ctx, collection)
         );
+        if (errors.length > 0) {
+            for (const err of errors) {
+                logger.error('Parallel transfer error', { error: err.message });
+                stats.errors++;
+            }
+        }
     } else {
         for (const collection of config.collections) {
-            await transferCollection(ctx, collection);
+            try {
+                await transferCollection(ctx, collection);
+            } catch (error) {
+                const err = error instanceof Error ? error : new Error(String(error));
+                logger.error(`Transfer failed for ${collection}`, { error: err.message });
+                stats.errors++;
+            }
         }
     }
 

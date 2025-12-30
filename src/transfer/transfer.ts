@@ -1,8 +1,8 @@
 import type { Firestore, WriteBatch, Query, QueryDocumentSnapshot } from 'firebase-admin/firestore';
-import type cliProgress from 'cli-progress';
 import type { Config, Stats, TransferState, TransformFunction } from '../types.js';
 import type { Output } from '../utils/output.js';
 import type { RateLimiter } from '../utils/rate-limiter.js';
+import type { ProgressBarWrapper } from '../utils/progress.js';
 import { withRetry } from '../utils/retry.js';
 import { matchesExcludePattern } from '../utils/patterns.js';
 import { estimateDocumentSize, formatBytes, FIRESTORE_MAX_DOC_SIZE } from '../utils/doc-size.js';
@@ -15,7 +15,7 @@ export interface TransferContext {
     config: Config;
     stats: Stats;
     output: Output;
-    progressBar: cliProgress.SingleBar | null;
+    progressBar: ProgressBarWrapper;
     transformFn: TransformFunction | null;
     state: TransferState | null;
     rateLimiter: RateLimiter | null;
@@ -166,8 +166,8 @@ function processDocument(
     return { skip: false, data: docData, markCompleted: true };
 }
 
-function incrementProgress(progressBar: cliProgress.SingleBar | null): void {
-    if (progressBar) progressBar.increment();
+function incrementProgress(progressBar: ProgressBarWrapper): void {
+    progressBar.increment();
 }
 
 async function commitBatchWithRetry(

@@ -1,9 +1,9 @@
-import cliProgress from 'cli-progress';
 import type { Firestore } from 'firebase-admin/firestore';
 
 import type { Config, Stats, TransferState, TransformFunction, CliArgs } from './types.js';
 import { Output } from './utils/output.js';
 import { RateLimiter } from './utils/rate-limiter.js';
+import { ProgressBarWrapper } from './utils/progress.js';
 import { loadTransferState, saveTransferState, createInitialState, validateStateForResume, deleteTransferState } from './state/index.js';
 import { sendWebhook } from './webhook/index.js';
 import { countDocuments, transferCollection, clearCollection, deleteOrphanDocuments, processInParallel, getDestCollectionPath, type TransferContext, type CountProgress } from './transfer/index.js';
@@ -235,9 +235,9 @@ async function setupProgressTracking(
     config: Config,
     stats: Stats,
     output: Output
-): Promise<{ totalDocs: number; progressBar: cliProgress.SingleBar | null }> {
+): Promise<{ totalDocs: number; progressBar: ProgressBarWrapper }> {
     let totalDocs = 0;
-    let progressBar: cliProgress.SingleBar | null = null;
+    const progressBar = new ProgressBarWrapper();
 
     if (!output.isQuiet) {
         output.info('📊 Counting documents...');
@@ -268,36 +268,7 @@ async function setupProgressTracking(
         }
         output.info(`   Total: ${totalDocs} documents to transfer\n`);
 
-        if (totalDocs > 0) {
-            progressBar = new cliProgress.SingleBar({
-                format: '📦 Progress |{bar}| {percentage}% | {value}/{total} docs | {speed} docs/s | ETA: {eta}s',
-                barCompleteChar: '█',
-                barIncompleteChar: '░',
-                hideCursor: true,
-            });
-            progressBar.start(totalDocs, 0, { speed: '0' });
-
-            let lastDocsTransferred = 0;
-            let lastTime = Date.now();
-
-            const speedInterval = setInterval(() => {
-                if (progressBar) {
-                    const now = Date.now();
-                    const timeDiff = (now - lastTime) / 1000;
-                    const currentDocs = stats.documentsTransferred;
-
-                    if (timeDiff > 0) {
-                        const docsDiff = currentDocs - lastDocsTransferred;
-                        const speed = Math.round(docsDiff / timeDiff);
-                        lastDocsTransferred = currentDocs;
-                        lastTime = now;
-                        progressBar.update({ speed: String(speed) });
-                    }
-                }
-            }, 500);
-
-            (progressBar as unknown as { _speedInterval: NodeJS.Timeout })._speedInterval = speedInterval;
-        }
+        progressBar.start(totalDocs, stats);
     }
 
     return { totalDocs, progressBar };
@@ -354,14 +325,8 @@ async function executeTransfer(ctx: TransferContext, output: Output): Promise<vo
     }
 }
 
-function cleanupProgressBar(progressBar: cliProgress.SingleBar | null): void {
-    if (progressBar) {
-        const interval = (progressBar as unknown as { _speedInterval?: NodeJS.Timeout })._speedInterval;
-        if (interval) {
-            clearInterval(interval);
-        }
-        progressBar.stop();
-    }
+function cleanupProgressBar(progressBar: ProgressBarWrapper): void {
+    progressBar.stop();
 }
 
 async function deleteOrphanDocs(

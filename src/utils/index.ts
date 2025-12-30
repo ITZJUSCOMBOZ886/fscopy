@@ -1,5 +1,6 @@
 export { withRetry, type RetryOptions } from './retry.js';
 export { Output, type OutputOptions } from './output.js';
+export { ProgressBarWrapper, type ProgressBarOptions } from './progress.js';
 export { checkCredentialsExist, ensureCredentials } from './credentials.js';
 export { matchesExcludePattern } from './patterns.js';
 export { formatFirebaseError, logFirebaseError, type FirebaseErrorInfo } from './errors.js';

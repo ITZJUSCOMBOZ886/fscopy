@@ -190,6 +190,11 @@ const argv = yargs(hideBin(process.argv))
         description: 'Number of documents to test per collection during transform validation (0 = skip, -1 = all)',
         default: 3,
     })
+    .option('detect-conflicts', {
+        type: 'boolean',
+        description: 'Detect if destination docs were modified during transfer',
+        default: false,
+    })
     .example('$0 --init config.ini', 'Generate INI config template (default)')
     .example('$0 --init config.json', 'Generate JSON config template')
     .example('$0 -f config.ini', 'Run transfer with config file')

@@ -58,6 +58,7 @@ fscopy -f config.ini --verify                            # Verify counts after t
 fscopy -f config.ini --rate-limit 100                    # Limit to 100 docs/s
 fscopy -f config.ini --skip-oversized                    # Skip docs > 1MB
 fscopy -f config.ini --json                              # JSON output for CI/CD
+fscopy -f config.ini --detect-conflicts                  # Detect dest modifications during transfer
 
 # Local development:
 bun start -- -f config.ini              # Run locally
@@ -162,3 +163,4 @@ INI format uses `[projects]` section for source/dest and `[transfer]` section fo
 | Skip oversized | `--skip-oversized` | - | - | false |
 | JSON output | `--json` | - | - | false |
 | Transform samples | `--transform-samples` | - | - | 3 |
+| Detect conflicts | `--detect-conflicts` | - | - | false |

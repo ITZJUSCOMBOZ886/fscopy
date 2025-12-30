@@ -216,7 +216,11 @@ export class Output {
             if (stats.documentsDeleted > 0) {
                 summary += `# Deleted: ${stats.documentsDeleted}\n`;
             }
-            summary += `# Transferred: ${stats.documentsTransferred}\n# Errors: ${stats.errors}\n# Duration: ${duration}s\n`;
+            summary += `# Transferred: ${stats.documentsTransferred}\n`;
+            if (stats.conflicts > 0) {
+                summary += `# Conflicts: ${stats.conflicts}\n`;
+            }
+            summary += `# Errors: ${stats.errors}\n# Duration: ${duration}s\n`;
             fs.appendFileSync(this.options.logFile, summary);
         }
     }

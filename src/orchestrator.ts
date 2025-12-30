@@ -1,6 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore';
 
-import type { Config, Stats, TransferState, TransformFunction, CliArgs } from './types.js';
+import type { Config, Stats, TransferState, TransformFunction, CliArgs, ConflictInfo } from './types.js';
 import { Output } from './utils/output.js';
 import { RateLimiter } from './utils/rate-limiter.js';
 import { ProgressBarWrapper } from './utils/progress.js';
@@ -55,7 +55,7 @@ function initializeResumeMode(config: Config, output: Output): ResumeResult {
 }
 
 function createEmptyStats(): Stats {
-    return { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0 };
+    return { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0, conflicts: 0 };
 }
 
 async function loadTransform(config: Config, output: Output): Promise<TransformFunction | null> {
@@ -150,8 +150,9 @@ export async function runTransfer(config: Config, argv: CliArgs, output: Output)
 
         const stateSaver = transferState ? new StateSaver(config.stateFile, transferState) : null;
 
+        const conflictList: ConflictInfo[] = [];
         const ctx: TransferContext = {
-            sourceDb, destDb, config, stats: currentStats, output, progressBar, transformFn, stateSaver, rateLimiter
+            sourceDb, destDb, config, stats: currentStats, output, progressBar, transformFn, stateSaver, rateLimiter, conflictList
         };
 
         await executeTransfer(ctx, output);

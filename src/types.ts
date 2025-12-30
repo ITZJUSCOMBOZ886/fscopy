@@ -35,6 +35,13 @@ export interface Config {
     skipOversized: boolean;
     json: boolean;
     transformSamples: number;
+    detectConflicts: boolean;
+}
+
+export interface ConflictInfo {
+    collection: string;
+    docId: string;
+    reason: string;
 }
 
 export interface Stats {
@@ -42,6 +49,7 @@ export interface Stats {
     documentsTransferred: number;
     documentsDeleted: number;
     errors: number;
+    conflicts: number;
 }
 
 export interface TransferState {
@@ -101,4 +109,5 @@ export interface CliArgs {
     skipOversized?: boolean;
     json?: boolean;
     transformSamples?: number;
+    detectConflicts?: boolean;
 }

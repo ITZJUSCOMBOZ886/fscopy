@@ -258,5 +258,6 @@ export function mergeConfig(
         skipOversized: cliArgs.skipOversized ?? defaultConfig.skipOversized,
         json: cliArgs.json ?? defaultConfig.json,
         transformSamples: cliArgs.transformSamples ?? defaultConfig.transformSamples,
+        detectConflicts: cliArgs.detectConflicts ?? defaultConfig.detectConflicts,
     };
 }

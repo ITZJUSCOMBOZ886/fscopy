@@ -1,5 +1,5 @@
 import type { Firestore, WriteBatch, Query, QueryDocumentSnapshot } from 'firebase-admin/firestore';
-import type { Config, Stats, TransformFunction } from '../types.js';
+import type { Config, Stats, TransformFunction, ConflictInfo } from '../types.js';
 import type { Output } from '../utils/output.js';
 import type { RateLimiter } from '../utils/rate-limiter.js';
 import type { ProgressBarWrapper } from '../utils/progress.js';
@@ -19,12 +19,86 @@ export interface TransferContext {
     transformFn: TransformFunction | null;
     stateSaver: StateSaver | null;
     rateLimiter: RateLimiter | null;
+    conflictList: ConflictInfo[];
 }
 
 interface DocProcessResult {
     skip: boolean;
     data?: Record<string, unknown>;
     markCompleted: boolean;
+}
+
+// Map of destDocId -> updateTime (as ISO string for comparison)
+type UpdateTimeMap = Map<string, string | null>;
+
+/**
+ * Capture updateTime of destination documents before processing.
+ * Returns a map of docId -> updateTime (ISO string, or null if doc doesn't exist).
+ */
+async function captureDestUpdateTimes(
+    destDb: Firestore,
+    destCollectionPath: string,
+    destDocIds: string[]
+): Promise<UpdateTimeMap> {
+    const updateTimes: UpdateTimeMap = new Map();
+
+    // Batch get dest docs to get their updateTime
+    const docRefs = destDocIds.map(id => destDb.collection(destCollectionPath).doc(id));
+    const docs = await destDb.getAll(...docRefs);
+
+    for (let i = 0; i < docs.length; i++) {
+        const doc = docs[i];
+        const docId = destDocIds[i];
+        if (doc.exists) {
+            const updateTime = doc.updateTime;
+            updateTimes.set(docId, updateTime ? updateTime.toDate().toISOString() : null);
+        } else {
+            updateTimes.set(docId, null);
+        }
+    }
+
+    return updateTimes;
+}
+
+/**
+ * Check for conflicts by comparing current updateTimes with captured ones.
+ * Returns array of docIds that have conflicts.
+ */
+async function checkForConflicts(
+    destDb: Firestore,
+    destCollectionPath: string,
+    destDocIds: string[],
+    capturedTimes: UpdateTimeMap
+): Promise<string[]> {
+    const conflicts: string[] = [];
+
+    const docRefs = destDocIds.map(id => destDb.collection(destCollectionPath).doc(id));
+    const docs = await destDb.getAll(...docRefs);
+
+    for (let i = 0; i < docs.length; i++) {
+        const doc = docs[i];
+        const docId = destDocIds[i];
+        const capturedTime = capturedTimes.get(docId);
+
+        const currentTime = doc.exists && doc.updateTime
+            ? doc.updateTime.toDate().toISOString()
+            : null;
+
+        // Conflict conditions:
+        // 1. Doc didn't exist before but now exists (created by someone else)
+        // 2. Doc was modified (updateTime changed)
+        // 3. Doc was deleted during transfer (existed before, doesn't now)
+        const isConflict =
+            (doc.exists && capturedTime === null) ||
+            (doc.exists && currentTime !== capturedTime) ||
+            (!doc.exists && capturedTime !== null);
+
+        if (isConflict) {
+            conflicts.push(docId);
+        }
+    }
+
+    return conflicts;
 }
 
 function buildTransferQuery(
@@ -210,43 +284,72 @@ function addDocToBatch(
     }
 }
 
-async function processDocInBatch(
+interface PreparedDoc {
+    sourceDoc: QueryDocumentSnapshot;
+    sourceDocId: string;
+    destDocId: string;
+    data: Record<string, unknown>;
+}
+
+async function prepareDocForTransfer(
     doc: QueryDocumentSnapshot,
     ctx: TransferContext,
     collectionPath: string,
-    destCollectionPath: string,
-    destBatch: FirebaseFirestore.WriteBatch,
-    batchDocIds: string[],
-    depth: number
-): Promise<void> {
-    const { destDb, config, stats, output, progressBar } = ctx;
+    destCollectionPath: string
+): Promise<PreparedDoc | null> {
+    const { config, progressBar } = ctx;
     const result = processDocument(doc, ctx, collectionPath, destCollectionPath);
     incrementProgress(progressBar);
 
     if (result.skip) {
-        if (result.markCompleted) batchDocIds.push(doc.id);
-        return;
+        return null;
     }
 
     const destDocId = getDestDocId(doc.id, config.idPrefix, config.idSuffix);
-
-    if (!config.dryRun) {
-        addDocToBatch(destBatch, destDb, destCollectionPath, destDocId, result.data!, config.merge);
-    }
-
-    batchDocIds.push(doc.id);
-    stats.documentsTransferred++;
-
-    output.logInfo('Transferred document', {
-        source: collectionPath,
-        dest: destCollectionPath,
+    return {
+        sourceDoc: doc,
         sourceDocId: doc.id,
         destDocId,
-    });
+        data: result.data!,
+    };
+}
 
-    if (config.includeSubcollections) {
-        await processSubcollections(ctx, doc, collectionPath, depth);
+async function commitPreparedDocs(
+    preparedDocs: PreparedDoc[],
+    ctx: TransferContext,
+    collectionPath: string,
+    destCollectionPath: string,
+    depth: number
+): Promise<string[]> {
+    const { destDb, config, stats, output } = ctx;
+    const destBatch = destDb.batch();
+    const batchDocIds: string[] = [];
+
+    for (const prepared of preparedDocs) {
+        if (!config.dryRun) {
+            addDocToBatch(destBatch, destDb, destCollectionPath, prepared.destDocId, prepared.data, config.merge);
+        }
+
+        batchDocIds.push(prepared.sourceDocId);
+        stats.documentsTransferred++;
+
+        output.logInfo('Transferred document', {
+            source: collectionPath,
+            dest: destCollectionPath,
+            sourceDocId: prepared.sourceDocId,
+            destDocId: prepared.destDocId,
+        });
+
+        if (config.includeSubcollections) {
+            await processSubcollections(ctx, prepared.sourceDoc, collectionPath, depth);
+        }
     }
+
+    if (!config.dryRun && preparedDocs.length > 0) {
+        await commitBatchWithRetry(destBatch, batchDocIds, ctx, collectionPath);
+    }
+
+    return batchDocIds;
 }
 
 async function processBatch(
@@ -256,18 +359,58 @@ async function processBatch(
     destCollectionPath: string,
     depth: number
 ): Promise<string[]> {
-    const destBatch = ctx.destDb.batch();
-    const batchDocIds: string[] = [];
+    const { destDb, config, stats, output, conflictList } = ctx;
 
+    // Step 1: Prepare all docs for transfer
+    const preparedDocs: PreparedDoc[] = [];
     for (const doc of batch) {
-        await processDocInBatch(doc, ctx, collectionPath, destCollectionPath, destBatch, batchDocIds, depth);
+        const prepared = await prepareDocForTransfer(doc, ctx, collectionPath, destCollectionPath);
+        if (prepared) {
+            preparedDocs.push(prepared);
+        }
     }
 
-    if (!ctx.config.dryRun && batch.length > 0) {
-        await commitBatchWithRetry(destBatch, batchDocIds, ctx, collectionPath);
+    if (preparedDocs.length === 0) {
+        return [];
     }
 
-    return batchDocIds;
+    // Step 2: If conflict detection is enabled, capture dest updateTimes and check for conflicts
+    let docsToWrite = preparedDocs;
+    if (config.detectConflicts && !config.dryRun) {
+        const destDocIds = preparedDocs.map(p => p.destDocId);
+        const capturedTimes = await captureDestUpdateTimes(destDb, destCollectionPath, destDocIds);
+
+        // Check for conflicts
+        const conflictingIds = await checkForConflicts(destDb, destCollectionPath, destDocIds, capturedTimes);
+
+        if (conflictingIds.length > 0) {
+            const conflictSet = new Set(conflictingIds);
+
+            // Filter out conflicting docs
+            docsToWrite = preparedDocs.filter(p => !conflictSet.has(p.destDocId));
+
+            // Record conflicts
+            for (const prepared of preparedDocs) {
+                if (conflictSet.has(prepared.destDocId)) {
+                    stats.conflicts++;
+                    conflictList.push({
+                        collection: destCollectionPath,
+                        docId: prepared.destDocId,
+                        reason: 'Document was modified during transfer',
+                    });
+                    output.warn(`⚠️  Conflict detected: ${destCollectionPath}/${prepared.destDocId} was modified during transfer`);
+                    output.logError('Conflict detected', {
+                        collection: destCollectionPath,
+                        docId: prepared.destDocId,
+                        reason: 'modified_during_transfer',
+                    });
+                }
+            }
+        }
+    }
+
+    // Step 3: Commit non-conflicting docs
+    return commitPreparedDocs(docsToWrite, ctx, collectionPath, destCollectionPath, depth);
 }
 
 export async function transferCollection(

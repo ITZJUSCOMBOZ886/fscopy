@@ -20,6 +20,7 @@ function createPayload(overrides: Partial<WebhookPayload> = {}): WebhookPayload 
             documentsTransferred: 100,
             documentsDeleted: 5,
             errors: 1,
+            conflicts: 0,
         },
         duration: 12.34,
         dryRun: false,

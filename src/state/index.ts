@@ -258,6 +258,7 @@ export function createInitialState(config: Config): TransferState {
             documentsTransferred: 0,
             documentsDeleted: 0,
             errors: 0,
+            conflicts: 0,
         },
     };
 }

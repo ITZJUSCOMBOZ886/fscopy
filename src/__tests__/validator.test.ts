@@ -31,6 +31,7 @@ function createConfig(overrides: Partial<Config> = {}): Config {
         skipOversized: false,
         json: false,
         transformSamples: 3,
+        detectConflicts: false,
         ...overrides,
     };
 }

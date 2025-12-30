@@ -1,49 +1,47 @@
 import readline from 'node:readline';
 import type { Config, Stats } from '../types.js';
 
+function formatIdModification(config: Config): string | null {
+    if (!config.idPrefix && !config.idSuffix) return null;
+    const parts = [
+        config.idPrefix ? `prefix: "${config.idPrefix}"` : null,
+        config.idSuffix ? `suffix: "${config.idSuffix}"` : null,
+    ].filter(Boolean);
+    return parts.join(', ');
+}
+
+function formatRenameCollections(config: Config): string | null {
+    if (Object.keys(config.renameCollection).length === 0) return null;
+    return Object.entries(config.renameCollection)
+        .map(([src, dest]) => `${src}→${dest}`)
+        .join(', ');
+}
+
 function displayAdditionalOptions(config: Config): void {
-    if (config.where.length > 0) {
-        const whereStr = config.where.map((w) => `${w.field} ${w.operator} ${w.value}`).join(', ');
-        console.log(`  🔍 Where filters:        ${whereStr}`);
-    }
-    if (config.exclude.length > 0) {
-        console.log(`  🚫 Exclude patterns:     ${config.exclude.join(', ')}`);
-    }
-    if (config.merge) {
-        console.log(`  🔀 Merge mode:           enabled (merge instead of overwrite)`);
-    }
-    if (config.parallel > 1) {
-        console.log(`  ⚡ Parallel transfers:   ${config.parallel} collections`);
-    }
-    if (config.clear) {
-        console.log(`  🗑️  Clear destination:    enabled (DESTRUCTIVE)`);
-    }
-    if (config.deleteMissing) {
-        console.log(`  🔄 Delete missing:       enabled (sync mode)`);
-    }
-    if (config.transform) {
-        console.log(`  🔧 Transform:            ${config.transform}`);
-    }
-    if (Object.keys(config.renameCollection).length > 0) {
-        const renameStr = Object.entries(config.renameCollection)
-            .map(([src, dest]) => `${src}→${dest}`)
-            .join(', ');
-        console.log(`  📝 Rename collections:   ${renameStr}`);
-    }
-    if (config.idPrefix || config.idSuffix) {
-        const idMod = [
-            config.idPrefix ? `prefix: "${config.idPrefix}"` : null,
-            config.idSuffix ? `suffix: "${config.idSuffix}"` : null,
-        ]
-            .filter(Boolean)
-            .join(', ');
-        console.log(`  🏷️  ID modification:      ${idMod}`);
-    }
-    if (config.rateLimit > 0) {
-        console.log(`  ⏱️  Rate limit:          ${config.rateLimit} docs/s`);
-    }
-    if (config.skipOversized) {
-        console.log(`  📏 Skip oversized:       enabled (skip docs > 1MB)`);
+    const options: Array<{ condition: boolean; icon: string; label: string; value: string }> = [
+        {
+            condition: config.where.length > 0,
+            icon: '🔍',
+            label: 'Where filters',
+            value: config.where.map((w) => `${w.field} ${w.operator} ${w.value}`).join(', '),
+        },
+        { condition: config.exclude.length > 0, icon: '🚫', label: 'Exclude patterns', value: config.exclude.join(', ') },
+        { condition: config.merge, icon: '🔀', label: 'Merge mode', value: 'enabled (merge instead of overwrite)' },
+        { condition: config.parallel > 1, icon: '⚡', label: 'Parallel transfers', value: `${config.parallel} collections` },
+        { condition: config.clear, icon: '🗑️ ', label: 'Clear destination', value: 'enabled (DESTRUCTIVE)' },
+        { condition: config.deleteMissing, icon: '🔄', label: 'Delete missing', value: 'enabled (sync mode)' },
+        { condition: Boolean(config.transform), icon: '🔧', label: 'Transform', value: config.transform ?? '' },
+        { condition: Boolean(formatRenameCollections(config)), icon: '📝', label: 'Rename collections', value: formatRenameCollections(config) ?? '' },
+        { condition: Boolean(formatIdModification(config)), icon: '🏷️ ', label: 'ID modification', value: formatIdModification(config) ?? '' },
+        { condition: config.rateLimit > 0, icon: '⏱️ ', label: 'Rate limit', value: `${config.rateLimit} docs/s` },
+        { condition: config.skipOversized, icon: '📏', label: 'Skip oversized', value: 'enabled (skip docs > 1MB)' },
+        { condition: config.detectConflicts, icon: '🔒', label: 'Detect conflicts', value: 'enabled' },
+    ];
+
+    for (const opt of options) {
+        if (opt.condition) {
+            console.log(`  ${opt.icon} ${opt.label.padEnd(18)} ${opt.value}`);
+        }
     }
 }
 
@@ -97,6 +95,9 @@ export function printSummary(stats: Stats, duration: string, logFile?: string, d
         console.log(`Documents deleted:     ${stats.documentsDeleted}`);
     }
     console.log(`Documents transferred: ${stats.documentsTransferred}`);
+    if (stats.conflicts > 0) {
+        console.log(`Conflicts detected:    ${stats.conflicts}`);
+    }
     console.log(`Errors: ${stats.errors}`);
     console.log(`Duration: ${duration}s`);
 
@@ -133,6 +134,7 @@ export function formatJsonOutput(
             documentsTransferred: stats.documentsTransferred,
             documentsDeleted: stats.documentsDeleted,
             errors: stats.errors,
+            conflicts: stats.conflicts,
         },
         duration,
         ...(verifyResult && { verify: verifyResult }),

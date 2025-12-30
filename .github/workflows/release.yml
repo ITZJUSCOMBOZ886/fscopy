@@ -40,10 +40,8 @@ jobs:
       - name: Test
         run: bun test
 
-      - name: Publish to npm
+      - name: Publish to npm (Trusted Publishing)
         run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

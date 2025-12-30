@@ -33,10 +33,14 @@ Transfer documents between Firebase projects with support for subcollections, fi
 - **Webhook notifications** - Send Slack, Discord, or custom webhooks on completion
 - **Resume transfers** - Continue interrupted transfers from saved state
 - **Interactive mode** - Guided setup with prompts for project and collection selection
-- **Progress bar** - Real-time progress with ETA
+- **Progress bar** - Real-time progress with speed (docs/s) and ETA
 - **Automatic retry** - Exponential backoff on network errors
 - **Dry run mode** - Preview changes before applying (enabled by default)
 - **Flexible config** - INI, JSON, or CLI arguments
+- **Rate limiting** - Control transfer speed to avoid quota issues
+- **Size validation** - Skip oversized documents (>1MB)
+- **JSON output** - Machine-readable output for CI/CD pipelines
+- **Post-transfer verification** - Verify document counts after transfer
 
 ## Installation
 
@@ -158,6 +162,18 @@ fscopy -f config.ini --webhook https://hooks.slack.com/services/...
 
 # Resume an interrupted transfer
 fscopy -f config.ini --resume
+
+# Verify document counts after transfer
+fscopy -f config.ini --verify
+
+# Rate limit to 100 docs/second (avoid quota issues)
+fscopy -f config.ini --rate-limit 100
+
+# Skip documents larger than 1MB
+fscopy -f config.ini --skip-oversized
+
+# JSON output for CI/CD pipelines
+fscopy -f config.ini --json
 ```
 
 ### Collection Renaming
@@ -364,6 +380,10 @@ fscopy --init config.json
 | `--webhook`                |       | string  |         | Webhook URL for notifications     |
 | `--resume`                 |       | boolean | `false` | Resume from saved state           |
 | `--state-file`             |       | string  | `.fscopy-state.json` | State file path      |
+| `--verify`                 |       | boolean | `false` | Verify counts after transfer      |
+| `--rate-limit`             |       | number  | `0`     | Limit docs/second (0 = unlimited) |
+| `--skip-oversized`         |       | boolean | `false` | Skip documents > 1MB              |
+| `--json`                   |       | boolean | `false` | JSON output for CI/CD             |
 
 ## How It Works
 

@@ -36,11 +36,11 @@
     "license": "MIT",
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/fazetitans/fscopy.git"
+        "url": "git+https://github.com/FaZeTitans/fscopy.git"
     },
-    "homepage": "https://github.com/fazetitans/fscopy#readme",
+    "homepage": "https://github.com/FaZeTitans/fscopy#readme",
     "bugs": {
-        "url": "https://github.com/fazetitans/fscopy/issues"
+        "url": "https://github.com/FaZeTitans/fscopy/issues"
     },
     "engines": {
         "node": ">=18.0.0"

@@ -196,12 +196,11 @@ describe('CLI', () => {
                 dryRun: false,
             }));
 
-            // Use --source-project to override, but validation will fail on credentials
-            // We just check the config display shows the override
+            // Use --source-project to override
             const { stdout } = await runCli([
                 '-f', configPath,
                 '--source-project', 'cli-source',
-                '-y',
+                '--validate-only',
             ]);
 
             // The displayed config should show cli-source, not config-source
@@ -219,7 +218,7 @@ describe('CLI', () => {
             const { stdout } = await runCli([
                 '-f', configPath,
                 '-c', 'products', 'inventory',
-                '-y',
+                '--validate-only',
             ]);
 
             expect(stdout).toContain('products');
@@ -252,7 +251,7 @@ describe('CLI', () => {
                 webhook: 'http://example.com/hook',
             }));
 
-            const { stdout } = await runCli(['-f', configPath, '-y']);
+            const { stdout } = await runCli(['-f', configPath, '--validate-only']);
 
             expect(stdout).toContain('HTTPS');
         });
@@ -271,7 +270,7 @@ collections = users,orders
 dryRun = true
 `);
 
-            const { stdout } = await runCli(['-f', configPath, '-y']);
+            const { stdout } = await runCli(['-f', configPath, '--validate-only']);
 
             expect(stdout).toContain('ini-source');
             expect(stdout).toContain('ini-dest');
@@ -287,7 +286,7 @@ dryRun = true
                 dryRun: true,
             }));
 
-            const { stdout } = await runCli(['-f', configPath, '-y']);
+            const { stdout } = await runCli(['-f', configPath, '--validate-only']);
 
             expect(stdout).toContain('json-source');
             expect(stdout).toContain('json-dest');
@@ -313,7 +312,7 @@ dryRun = true
 
             // Just verify that -q doesn't cause parse errors
             // (actual quiet behavior tested in output.test.ts)
-            const { stdout, stderr } = await runCli(['-f', configPath, '-y', '-q']);
+            const { stdout, stderr } = await runCli(['-f', configPath, '--validate-only', '-q']);
 
             // Should not have yargs parsing errors
             expect(stderr).not.toContain('Unknown argument');

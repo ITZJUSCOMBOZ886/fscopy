@@ -115,4 +115,5 @@ export interface CliArgs {
     detectConflicts?: boolean;
     maxDepth?: number;
     verifyIntegrity?: boolean;
+    validateOnly?: boolean;
 }

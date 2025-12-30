@@ -205,6 +205,12 @@ const argv = yargs(hideBin(process.argv))
         description: 'Verify document integrity with hash after transfer',
         default: false,
     })
+    .option('validate-only', {
+        type: 'boolean',
+        description: 'Only validate config and display it (no transfer)',
+        default: false,
+        hidden: true,
+    })
     .example('$0 --init config.ini', 'Generate INI config template (default)')
     .example('$0 --init config.json', 'Generate JSON config template')
     .example('$0 -f config.ini', 'Run transfer with config file')
@@ -269,6 +275,12 @@ async function main(): Promise<void> {
         if (webhookValidation.warning) {
             console.log(`\n⚠️  ${webhookValidation.warning}`);
         }
+    }
+
+    // Exit early if only validating config (for testing)
+    if (argv.validateOnly) {
+        console.log('\n✓ Configuration is valid');
+        process.exit(0);
     }
 
     // Skip confirmation in interactive mode (already confirmed by selection)

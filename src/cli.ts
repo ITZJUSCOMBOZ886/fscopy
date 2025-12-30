@@ -1,5 +1,8 @@
 #!/usr/bin/env bun
 
+// Suppress GCE metadata lookup warning (we're not running on Google Cloud)
+process.env.METADATA_SERVER_DETECTION = 'none';
+
 import admin from 'firebase-admin';
 import type { Firestore, DocumentReference, WriteBatch } from 'firebase-admin/firestore';
 import yargs from 'yargs';
@@ -8,8 +11,37 @@ import ini from 'ini';
 import cliProgress from 'cli-progress';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import readline from 'node:readline';
 import { input, confirm, checkbox } from '@inquirer/prompts';
+
+// =============================================================================
+// Credentials Check
+// =============================================================================
+
+function checkCredentialsExist(): { exists: boolean; path: string } {
+    // Check for explicit credentials file
+    if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+        const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+        return { exists: fs.existsSync(credPath), path: credPath };
+    }
+
+    // Check for Application Default Credentials
+    const adcPath = path.join(os.homedir(), '.config', 'gcloud', 'application_default_credentials.json');
+    return { exists: fs.existsSync(adcPath), path: adcPath };
+}
+
+function ensureCredentials(): void {
+    const { exists, path: credPath } = checkCredentialsExist();
+
+    if (!exists) {
+        console.error('\n❌ Google Cloud credentials not found.');
+        console.error(`   Expected at: ${credPath}\n`);
+        console.error('   Run this command to authenticate:');
+        console.error('   gcloud auth application-default login\n');
+        process.exit(1);
+    }
+}
 
 // =============================================================================
 // Types
@@ -920,29 +952,88 @@ async function runInteractiveMode(config: Config): Promise<Config> {
     if (!destProject) {
         destProject = await input({
             message: 'Destination Firebase project ID:',
-            validate: (value) => {
-                if (value.length === 0) return 'Project ID is required';
-                if (value === sourceProject) return 'Must be different from source';
-                return true;
-            },
+            validate: (value) => value.length > 0 || 'Project ID is required',
         });
     } else {
         console.log(`📥 Destination project: ${destProject}`);
     }
 
+    // If source = destination, ask for rename/id modifications
+    let renameCollection = config.renameCollection;
+    let idPrefix = config.idPrefix;
+    let idSuffix = config.idSuffix;
+
+    if (sourceProject === destProject) {
+        console.log('\n⚠️  Source and destination are the same project.');
+        console.log('   You need to rename collections or modify document IDs to avoid overwriting.\n');
+
+        const modifyIds = await confirm({
+            message: 'Add a prefix to document IDs?',
+            default: true,
+        });
+
+        if (modifyIds) {
+            idPrefix = await input({
+                message: 'Document ID prefix (e.g., "backup_"):',
+                default: 'backup_',
+                validate: (value) => value.length > 0 || 'Prefix is required',
+            });
+        } else {
+            // Ask for suffix as alternative
+            const useSuffix = await confirm({
+                message: 'Add a suffix to document IDs instead?',
+                default: true,
+            });
+
+            if (useSuffix) {
+                idSuffix = await input({
+                    message: 'Document ID suffix (e.g., "_backup"):',
+                    default: '_backup',
+                    validate: (value) => value.length > 0 || 'Suffix is required',
+                });
+            } else {
+                console.log('\n❌ Cannot proceed: source and destination are the same without ID modification.');
+                console.log('   This would overwrite your data. Use --rename-collection, --id-prefix, or --id-suffix.\n');
+                process.exit(1);
+            }
+        }
+    }
+
     // Initialize source Firebase to list collections
     console.log('\n📊 Connecting to source project...');
-    const tempSourceApp = admin.initializeApp(
-        {
-            credential: admin.credential.applicationDefault(),
-            projectId: sourceProject,
-        },
-        'interactive-source'
-    );
-    const sourceDb = tempSourceApp.firestore();
 
-    // List all root collections
-    const rootCollections = await sourceDb.listCollections();
+    let tempSourceApp: admin.app.App;
+    let sourceDb: Firestore;
+    let rootCollections: FirebaseFirestore.CollectionReference[];
+
+    try {
+        tempSourceApp = admin.initializeApp(
+            {
+                credential: admin.credential.applicationDefault(),
+                projectId: sourceProject,
+            },
+            'interactive-source'
+        );
+        sourceDb = tempSourceApp.firestore();
+
+        // List collections (also tests connectivity)
+        rootCollections = await sourceDb.listCollections();
+    } catch (error) {
+        const err = error as Error & { code?: string };
+        console.error('\n❌ Cannot connect to Firebase project:', err.message);
+
+        if (err.message.includes('default credentials') || err.message.includes('credential')) {
+            console.error('\n   Run this command to authenticate:');
+            console.error('   gcloud auth application-default login\n');
+        } else if (err.message.includes('not found') || err.message.includes('NOT_FOUND')) {
+            console.error(`\n   Project "${sourceProject}" not found. Check the project ID.\n`);
+        } else if (err.message.includes('permission') || err.message.includes('PERMISSION_DENIED')) {
+            console.error('\n   You don\'t have permission to access this project\'s Firestore.\n');
+        }
+
+        process.exit(1);
+    }
+
     const collectionIds = rootCollections.map((col) => col.id);
 
     if (collectionIds.length === 0) {
@@ -1002,6 +1093,9 @@ async function runInteractiveMode(config: Config): Promise<Config> {
         includeSubcollections,
         dryRun,
         merge,
+        renameCollection,
+        idPrefix,
+        idSuffix,
     };
 }
 
@@ -1033,6 +1127,66 @@ function initializeFirebase(config: Config): { sourceDb: Firestore; destDb: Fire
         sourceDb: sourceApp.firestore(),
         destDb: destApp.firestore(),
     };
+}
+
+async function checkDatabaseConnectivity(
+    sourceDb: Firestore,
+    destDb: Firestore,
+    config: Config
+): Promise<void> {
+    console.log('🔌 Checking database connectivity...');
+
+    // Check source database
+    try {
+        await sourceDb.listCollections();
+        console.log(`   ✓ Source (${config.sourceProject}) - connected`);
+    } catch (error) {
+        const err = error as Error & { code?: string };
+        let hint = '';
+
+        if (err.code === 'app/invalid-credential' || err.message.includes('credential')) {
+            hint = '\n   Hint: Run "gcloud auth application-default login" to authenticate';
+        } else if (err.code === 'unavailable' || err.message.includes('UNAVAILABLE')) {
+            hint = '\n   Hint: Check your internet connection';
+        } else if (err.message.includes('not found') || err.message.includes('NOT_FOUND')) {
+            hint = '\n   Hint: Verify the project ID is correct';
+        } else if (err.message.includes('permission') || err.message.includes('PERMISSION_DENIED')) {
+            hint = '\n   Hint: Ensure you have Firestore access on this project';
+        }
+
+        throw new Error(
+            `Cannot connect to source database (${config.sourceProject}): ${err.message}${hint}`
+        );
+    }
+
+    // Check destination database (only if different from source)
+    if (config.sourceProject !== config.destProject) {
+        try {
+            await destDb.listCollections();
+            console.log(`   ✓ Destination (${config.destProject}) - connected`);
+        } catch (error) {
+            const err = error as Error & { code?: string };
+            let hint = '';
+
+            if (err.code === 'app/invalid-credential' || err.message.includes('credential')) {
+                hint = '\n   Hint: Run "gcloud auth application-default login" to authenticate';
+            } else if (err.code === 'unavailable' || err.message.includes('UNAVAILABLE')) {
+                hint = '\n   Hint: Check your internet connection';
+            } else if (err.message.includes('not found') || err.message.includes('NOT_FOUND')) {
+                hint = '\n   Hint: Verify the project ID is correct';
+            } else if (err.message.includes('permission') || err.message.includes('PERMISSION_DENIED')) {
+                hint = '\n   Hint: Ensure you have Firestore access on this project';
+            }
+
+            throw new Error(
+                `Cannot connect to destination database (${config.destProject}): ${err.message}${hint}`
+            );
+        }
+    } else {
+        console.log(`   ✓ Destination (same as source) - connected`);
+    }
+
+    console.log('');
 }
 
 async function cleanupFirebase(): Promise<void> {
@@ -1373,12 +1527,12 @@ async function deleteOrphanDocuments(
     // Get the destination path (may be renamed)
     const destCollectionPath = getDestCollectionPath(sourceCollectionPath, config.renameCollection);
 
-    // Get all document IDs from source
-    const sourceSnapshot = await sourceDb.collection(sourceCollectionPath).get();
+    // Get all document IDs from source (use select() to only fetch IDs, not data)
+    const sourceSnapshot = await sourceDb.collection(sourceCollectionPath).select().get();
     const sourceIds = new Set(sourceSnapshot.docs.map((doc) => doc.id));
 
-    // Get all document IDs from destination
-    const destSnapshot = await destDb.collection(destCollectionPath).get();
+    // Get all document IDs from destination (use select() to only fetch IDs, not data)
+    const destSnapshot = await destDb.collection(destCollectionPath).select().get();
 
     // Find orphan documents (in dest but not in source)
     const orphanDocs = destSnapshot.docs.filter((doc) => !sourceIds.has(doc.id));
@@ -1444,11 +1598,17 @@ async function deleteOrphanDocuments(
     return deletedCount;
 }
 
+interface CountProgress {
+    onCollection?: (path: string, count: number) => void;
+    onSubcollection?: (path: string) => void;
+}
+
 async function countDocuments(
     sourceDb: Firestore,
     collectionPath: string,
     config: Config,
-    depth: number = 0
+    depth: number = 0,
+    progress?: CountProgress
 ): Promise<number> {
     let count = 0;
 
@@ -1460,10 +1620,19 @@ async function countDocuments(
         }
     }
 
-    const snapshot = await query.get();
-    count += snapshot.size;
-
+    // Use count() aggregation to avoid downloading all documents (much cheaper)
+    // But we need document refs for subcollections, so we'll need a different approach
     if (config.includeSubcollections) {
+        // When including subcollections, we need to fetch docs to get their refs
+        // Use select() to only fetch document IDs, not the data (reduces bandwidth)
+        const snapshot = await query.select().get();
+        count += snapshot.size;
+
+        // Report progress for root collections
+        if (depth === 0 && progress?.onCollection) {
+            progress.onCollection(collectionPath, snapshot.size);
+        }
+
         for (const doc of snapshot.docs) {
             const subcollections = await getSubcollections(doc.ref);
             for (const subId of subcollections) {
@@ -1474,8 +1643,22 @@ async function countDocuments(
                     continue;
                 }
 
-                count += await countDocuments(sourceDb, subPath, config, depth + 1);
+                // Report subcollection discovery
+                if (progress?.onSubcollection) {
+                    progress.onSubcollection(subPath);
+                }
+
+                count += await countDocuments(sourceDb, subPath, config, depth + 1, progress);
             }
+        }
+    } else {
+        // No subcollections: use count() aggregation (1 read instead of N)
+        const countSnapshot = await query.count().get();
+        count = countSnapshot.data().count;
+
+        // Report progress for root collections
+        if (depth === 0 && progress?.onCollection) {
+            progress.onCollection(collectionPath, count);
         }
     }
 
@@ -1693,6 +1876,9 @@ if (argv.init !== undefined) {
     process.exit(0);
 }
 
+// Check credentials before proceeding
+ensureCredentials();
+
 // Main transfer flow
 let config: Config = defaults;
 let logger: Logger | null = null;
@@ -1773,6 +1959,9 @@ try {
 
     const { sourceDb, destDb } = initializeFirebase(config);
 
+    // Verify database connectivity before proceeding
+    await checkDatabaseConnectivity(sourceDb, destDb, config);
+
     if (!config.resume) {
         stats = {
             collectionsProcessed: 0,
@@ -1788,10 +1977,34 @@ try {
 
     if (!argv.quiet) {
         console.log('📊 Counting documents...');
+        let lastSubcollectionLog = Date.now();
+        let subcollectionCount = 0;
+
+        const countProgress: CountProgress = {
+            onCollection: (path, count) => {
+                console.log(`   ${path}: ${count} documents`);
+            },
+            onSubcollection: (_path) => {
+                subcollectionCount++;
+                // Show progress every 2 seconds to avoid flooding the console
+                const now = Date.now();
+                if (now - lastSubcollectionLog > 2000) {
+                    process.stdout.write(`\r   Scanning subcollections... (${subcollectionCount} found)`);
+                    lastSubcollectionLog = now;
+                }
+            },
+        };
+
         for (const collection of config.collections) {
-            totalDocs += await countDocuments(sourceDb, collection, config);
+            totalDocs += await countDocuments(sourceDb, collection, config, 0, countProgress);
         }
-        console.log(`   Found ${totalDocs} documents to transfer\n`);
+
+        // Clear the subcollection line if any were found
+        if (subcollectionCount > 0) {
+            process.stdout.write('\r' + ' '.repeat(60) + '\r');
+            console.log(`   Subcollections scanned: ${subcollectionCount}`);
+        }
+        console.log(`   Total: ${totalDocs} documents to transfer\n`);
 
         if (totalDocs > 0) {
             progressBar = new cliProgress.SingleBar({

@@ -1,4 +1,4 @@
-import type { Firestore } from 'firebase-admin/firestore';
+import type { Firestore, Query } from 'firebase-admin/firestore';
 import type { Config } from '../types.js';
 import { matchesExcludePattern } from '../utils/patterns.js';
 import { getSubcollections } from './helpers.js';
@@ -8,6 +8,86 @@ export interface CountProgress {
     onSubcollection?: (path: string) => void;
 }
 
+function buildQueryWithFilters(
+    sourceDb: Firestore,
+    collectionPath: string,
+    config: Config,
+    depth: number
+): Query {
+    let query: Query = sourceDb.collection(collectionPath);
+    if (depth === 0 && config.where.length > 0) {
+        for (const filter of config.where) {
+            query = query.where(filter.field, filter.operator, filter.value);
+        }
+    }
+    return query;
+}
+
+async function countWithSubcollections(
+    sourceDb: Firestore,
+    query: Query,
+    collectionPath: string,
+    config: Config,
+    depth: number,
+    progress?: CountProgress
+): Promise<number> {
+    const snapshot = await query.select().get();
+    let count = snapshot.size;
+
+    if (depth === 0 && progress?.onCollection) {
+        progress.onCollection(collectionPath, snapshot.size);
+    }
+
+    for (const doc of snapshot.docs) {
+        count += await countSubcollectionsForDoc(
+            sourceDb, doc, collectionPath, config, depth, progress
+        );
+    }
+
+    return count;
+}
+
+async function countSubcollectionsForDoc(
+    sourceDb: Firestore,
+    doc: FirebaseFirestore.QueryDocumentSnapshot,
+    collectionPath: string,
+    config: Config,
+    depth: number,
+    progress?: CountProgress
+): Promise<number> {
+    let count = 0;
+    const subcollections = await getSubcollections(doc.ref);
+
+    for (const subId of subcollections) {
+        if (matchesExcludePattern(subId, config.exclude)) continue;
+
+        const subPath = `${collectionPath}/${doc.id}/${subId}`;
+        if (progress?.onSubcollection) {
+            progress.onSubcollection(subPath);
+        }
+
+        count += await countDocuments(sourceDb, subPath, config, depth + 1, progress);
+    }
+
+    return count;
+}
+
+async function countWithoutSubcollections(
+    query: Query,
+    collectionPath: string,
+    depth: number,
+    progress?: CountProgress
+): Promise<number> {
+    const countSnapshot = await query.count().get();
+    const count = countSnapshot.data().count;
+
+    if (depth === 0 && progress?.onCollection) {
+        progress.onCollection(collectionPath, count);
+    }
+
+    return count;
+}
+
 export async function countDocuments(
     sourceDb: Firestore,
     collectionPath: string,
@@ -15,57 +95,11 @@ export async function countDocuments(
     depth: number = 0,
     progress?: CountProgress
 ): Promise<number> {
-    let count = 0;
+    const query = buildQueryWithFilters(sourceDb, collectionPath, config, depth);
 
-    // Build query with where filters (only at root level)
-    let query: FirebaseFirestore.Query = sourceDb.collection(collectionPath);
-    if (depth === 0 && config.where.length > 0) {
-        for (const filter of config.where) {
-            query = query.where(filter.field, filter.operator, filter.value);
-        }
-    }
-
-    // Use count() aggregation to avoid downloading all documents (much cheaper)
-    // But we need document refs for subcollections, so we'll need a different approach
     if (config.includeSubcollections) {
-        // When including subcollections, we need to fetch docs to get their refs
-        // Use select() to only fetch document IDs, not the data (reduces bandwidth)
-        const snapshot = await query.select().get();
-        count += snapshot.size;
-
-        // Report progress for root collections
-        if (depth === 0 && progress?.onCollection) {
-            progress.onCollection(collectionPath, snapshot.size);
-        }
-
-        for (const doc of snapshot.docs) {
-            const subcollections = await getSubcollections(doc.ref);
-            for (const subId of subcollections) {
-                const subPath = `${collectionPath}/${doc.id}/${subId}`;
-
-                // Check exclude patterns
-                if (matchesExcludePattern(subId, config.exclude)) {
-                    continue;
-                }
-
-                // Report subcollection discovery
-                if (progress?.onSubcollection) {
-                    progress.onSubcollection(subPath);
-                }
-
-                count += await countDocuments(sourceDb, subPath, config, depth + 1, progress);
-            }
-        }
-    } else {
-        // No subcollections: use count() aggregation (1 read instead of N)
-        const countSnapshot = await query.count().get();
-        count = countSnapshot.data().count;
-
-        // Report progress for root collections
-        if (depth === 0 && progress?.onCollection) {
-            progress.onCollection(collectionPath, count);
-        }
+        return countWithSubcollections(sourceDb, query, collectionPath, config, depth, progress);
     }
 
-    return count;
+    return countWithoutSubcollections(query, collectionPath, depth, progress);
 }

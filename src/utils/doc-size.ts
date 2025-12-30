@@ -34,85 +34,59 @@ export function estimateDocumentSize(
     return size;
 }
 
+function isFirestoreTimestamp(value: object): boolean {
+    return '_seconds' in value && '_nanoseconds' in value;
+}
+
+function isGeoPoint(value: object): boolean {
+    return '_latitude' in value && '_longitude' in value;
+}
+
+function isDocumentReference(value: object): boolean {
+    return '_path' in value && typeof (value as { _path: unknown })._path === 'object';
+}
+
+function getDocRefSize(value: object): number {
+    const pathObj = (value as { _path: { segments?: string[] } })._path;
+    if (pathObj.segments) {
+        return pathObj.segments.join('/').length + 1;
+    }
+    return 16; // Approximate
+}
+
+function estimateArraySize(arr: unknown[]): number {
+    let size = 0;
+    for (const item of arr) {
+        size += estimateValueSize(item);
+    }
+    return size;
+}
+
+function estimateObjectSize(obj: object): number {
+    let size = 0;
+    for (const [key, val] of Object.entries(obj)) {
+        size += key.length + 1; // Key size
+        size += estimateValueSize(val); // Value size
+    }
+    return size;
+}
+
 function estimateValueSize(value: unknown): number {
-    if (value === null || value === undefined) {
-        return 1;
-    }
+    if (value === null || value === undefined) return 1;
+    if (typeof value === 'boolean') return 1;
+    if (typeof value === 'number') return 8;
+    if (typeof value === 'string') return Buffer.byteLength(value, 'utf8') + 1;
+    if (value instanceof Date) return 8;
 
-    if (typeof value === 'boolean') {
-        return 1;
-    }
-
-    if (typeof value === 'number') {
-        return 8;
-    }
-
-    if (typeof value === 'string') {
-        // UTF-8 encoded length
-        return Buffer.byteLength(value, 'utf8') + 1;
-    }
-
-    if (value instanceof Date) {
-        return 8;
-    }
-
-    // Firestore Timestamp
-    if (
-        value &&
-        typeof value === 'object' &&
-        '_seconds' in value &&
-        '_nanoseconds' in value
-    ) {
-        return 8;
-    }
-
-    // GeoPoint
-    if (
-        value &&
-        typeof value === 'object' &&
-        '_latitude' in value &&
-        '_longitude' in value
-    ) {
-        return 16;
-    }
-
-    // DocumentReference
-    if (
-        value &&
-        typeof value === 'object' &&
-        '_path' in value &&
-        typeof (value as { _path: unknown })._path === 'object'
-    ) {
-        const pathObj = (value as { _path: { segments?: string[] } })._path;
-        if (pathObj.segments) {
-            return pathObj.segments.join('/').length + 1;
-        }
-        return 16; // Approximate
-    }
-
-    // Array
-    if (Array.isArray(value)) {
-        let size = 0;
-        for (const item of value) {
-            size += estimateValueSize(item);
-        }
-        return size;
-    }
-
-    // Map/Object
     if (typeof value === 'object') {
-        let size = 0;
-        for (const [key, val] of Object.entries(value)) {
-            // Key size (field name)
-            size += key.length + 1;
-            // Value size
-            size += estimateValueSize(val);
-        }
-        return size;
+        if (isFirestoreTimestamp(value)) return 8;
+        if (isGeoPoint(value)) return 16;
+        if (isDocumentReference(value)) return getDocRefSize(value);
+        if (Array.isArray(value)) return estimateArraySize(value);
+        return estimateObjectSize(value);
     }
 
-    // Unknown type - estimate as small value
-    return 8;
+    return 8; // Unknown type
 }
 
 /**

@@ -3,72 +3,76 @@ import type { Firestore } from 'firebase-admin/firestore';
 import { input, checkbox, confirm } from '@inquirer/prompts';
 import type { Config } from './types.js';
 
+async function promptForProject(
+    currentValue: string | null | undefined,
+    label: string,
+    emoji: string
+): Promise<string> {
+    if (currentValue) {
+        console.log(`${emoji} ${label}: ${currentValue}`);
+        return currentValue;
+    }
+    return input({
+        message: `${label}:`,
+        validate: (value) => value.length > 0 || 'Project ID is required',
+    });
+}
+
+async function promptForIdModification(
+    currentPrefix: string | null,
+    currentSuffix: string | null
+): Promise<{ idPrefix: string | null; idSuffix: string | null }> {
+    console.log('\n⚠️  Source and destination are the same project.');
+    console.log('   You need to rename collections or modify document IDs to avoid overwriting.\n');
+
+    const modifyIds = await confirm({
+        message: 'Add a prefix to document IDs?',
+        default: true,
+    });
+
+    if (modifyIds) {
+        const idPrefix = await input({
+            message: 'Document ID prefix (e.g., "backup_"):',
+            default: 'backup_',
+            validate: (value) => value.length > 0 || 'Prefix is required',
+        });
+        return { idPrefix, idSuffix: currentSuffix };
+    }
+
+    const useSuffix = await confirm({
+        message: 'Add a suffix to document IDs instead?',
+        default: true,
+    });
+
+    if (useSuffix) {
+        const idSuffix = await input({
+            message: 'Document ID suffix (e.g., "_backup"):',
+            default: '_backup',
+            validate: (value) => value.length > 0 || 'Suffix is required',
+        });
+        return { idPrefix: currentPrefix, idSuffix };
+    }
+
+    console.log('\n❌ Cannot proceed: source and destination are the same without ID modification.');
+    console.log('   This would overwrite your data. Use --rename-collection, --id-prefix, or --id-suffix.\n');
+    process.exit(1);
+}
+
 export async function runInteractiveMode(config: Config): Promise<Config> {
     console.log('\n' + '='.repeat(60));
     console.log('🔄 FSCOPY - INTERACTIVE MODE');
     console.log('='.repeat(60) + '\n');
 
-    // Prompt for source project if not set
-    let sourceProject = config.sourceProject;
-    if (!sourceProject) {
-        sourceProject = await input({
-            message: 'Source Firebase project ID:',
-            validate: (value) => value.length > 0 || 'Project ID is required',
-        });
-    } else {
-        console.log(`📤 Source project: ${sourceProject}`);
-    }
+    const sourceProject = await promptForProject(config.sourceProject, 'Source Firebase project ID', '📤');
+    const destProject = await promptForProject(config.destProject, 'Destination Firebase project ID', '📥');
 
-    // Prompt for destination project if not set
-    let destProject = config.destProject;
-    if (!destProject) {
-        destProject = await input({
-            message: 'Destination Firebase project ID:',
-            validate: (value) => value.length > 0 || 'Project ID is required',
-        });
-    } else {
-        console.log(`📥 Destination project: ${destProject}`);
-    }
-
-    // If source = destination, ask for rename/id modifications
-    const renameCollection = config.renameCollection;
     let idPrefix = config.idPrefix;
     let idSuffix = config.idSuffix;
 
     if (sourceProject === destProject) {
-        console.log('\n⚠️  Source and destination are the same project.');
-        console.log('   You need to rename collections or modify document IDs to avoid overwriting.\n');
-
-        const modifyIds = await confirm({
-            message: 'Add a prefix to document IDs?',
-            default: true,
-        });
-
-        if (modifyIds) {
-            idPrefix = await input({
-                message: 'Document ID prefix (e.g., "backup_"):',
-                default: 'backup_',
-                validate: (value) => value.length > 0 || 'Prefix is required',
-            });
-        } else {
-            // Ask for suffix as alternative
-            const useSuffix = await confirm({
-                message: 'Add a suffix to document IDs instead?',
-                default: true,
-            });
-
-            if (useSuffix) {
-                idSuffix = await input({
-                    message: 'Document ID suffix (e.g., "_backup"):',
-                    default: '_backup',
-                    validate: (value) => value.length > 0 || 'Suffix is required',
-                });
-            } else {
-                console.log('\n❌ Cannot proceed: source and destination are the same without ID modification.');
-                console.log('   This would overwrite your data. Use --rename-collection, --id-prefix, or --id-suffix.\n');
-                process.exit(1);
-            }
-        }
+        const mods = await promptForIdModification(idPrefix, idSuffix);
+        idPrefix = mods.idPrefix;
+        idSuffix = mods.idSuffix;
     }
 
     // Initialize source Firebase to list collections
@@ -165,7 +169,6 @@ export async function runInteractiveMode(config: Config): Promise<Config> {
         includeSubcollections,
         dryRun,
         merge,
-        renameCollection,
         idPrefix,
         idSuffix,
     };

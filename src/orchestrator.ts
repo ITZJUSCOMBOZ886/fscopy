@@ -19,171 +19,170 @@ export interface TransferResult {
     verifyResult?: Record<string, { source: number; dest: number; match: boolean }> | null;
 }
 
+interface ResumeResult {
+    state: TransferState | null;
+    stats: Stats;
+}
+
+function initializeResumeMode(config: Config): ResumeResult {
+    if (config.resume) {
+        const existingState = loadTransferState(config.stateFile);
+        if (!existingState) {
+            throw new Error(`No state file found at ${config.stateFile}. Cannot resume without a saved state. Run without --resume to start fresh.`);
+        }
+
+        const stateErrors = validateStateForResume(existingState, config);
+        if (stateErrors.length > 0) {
+            throw new Error(`Cannot resume: state file incompatible with current config:\n   - ${stateErrors.join('\n   - ')}`);
+        }
+
+        const completedCount = Object.values(existingState.completedDocs).reduce((sum, ids) => sum + ids.length, 0);
+        console.log(`\n🔄 Resuming transfer from ${config.stateFile}`);
+        console.log(`   Started: ${existingState.startedAt}`);
+        console.log(`   Previously completed: ${completedCount} documents`);
+
+        return { state: existingState, stats: { ...existingState.stats } };
+    }
+
+    if (!config.dryRun) {
+        const newState = createInitialState(config);
+        saveTransferState(config.stateFile, newState);
+        console.log(`\n💾 State will be saved to ${config.stateFile} (use --resume to continue if interrupted)`);
+        return { state: newState, stats: createEmptyStats() };
+    }
+
+    return { state: null, stats: createEmptyStats() };
+}
+
+function createEmptyStats(): Stats {
+    return { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0 };
+}
+
+async function loadTransform(config: Config): Promise<TransformFunction | null> {
+    if (!config.transform) return null;
+
+    console.log(`\n🔧 Loading transform: ${config.transform}`);
+    const transformFn = await loadTransformFunction(config.transform);
+    console.log('   Transform loaded successfully');
+    return transformFn;
+}
+
+async function handleSuccessOutput(
+    config: Config,
+    argv: CliArgs,
+    stats: Stats,
+    duration: number,
+    verifyResult: Record<string, { source: number; dest: number; match: boolean }> | null,
+    logger: Logger
+): Promise<void> {
+    if (config.json) {
+        console.log(formatJsonOutput(true, config, stats, duration, undefined, verifyResult));
+    } else {
+        printSummary(stats, duration.toFixed(2), argv.log, config.dryRun);
+    }
+
+    if (config.webhook) {
+        await sendWebhook(config.webhook, {
+            source: config.sourceProject!,
+            destination: config.destProject!,
+            collections: config.collections,
+            stats,
+            duration,
+            dryRun: config.dryRun,
+            success: true,
+        }, logger);
+    }
+}
+
+async function handleErrorOutput(
+    config: Config,
+    stats: Stats,
+    duration: number,
+    errorMessage: string,
+    logger: Logger
+): Promise<void> {
+    if (config.json) {
+        console.log(formatJsonOutput(false, config, stats, duration, errorMessage));
+    } else {
+        console.error('\n❌ Error during transfer:', errorMessage);
+    }
+
+    if (config.webhook) {
+        await sendWebhook(config.webhook, {
+            source: config.sourceProject ?? 'unknown',
+            destination: config.destProject ?? 'unknown',
+            collections: config.collections,
+            stats,
+            duration,
+            dryRun: config.dryRun,
+            success: false,
+            error: errorMessage,
+        }, logger);
+    }
+}
+
 export async function runTransfer(config: Config, argv: CliArgs, logger: Logger): Promise<TransferResult> {
-    let stats: Stats = { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0 };
     const startTime = Date.now();
 
     try {
-        // Handle resume mode
-        let transferState: TransferState | null = null;
-        if (config.resume) {
-            const existingState = loadTransferState(config.stateFile);
-            if (!existingState) {
-                throw new Error(`No state file found at ${config.stateFile}. Cannot resume without a saved state. Run without --resume to start fresh.`);
-            }
-
-            const stateErrors = validateStateForResume(existingState, config);
-            if (stateErrors.length > 0) {
-                throw new Error(`Cannot resume: state file incompatible with current config:\n   - ${stateErrors.join('\n   - ')}`);
-            }
-
-            transferState = existingState;
-            const completedCount = Object.values(transferState.completedDocs).reduce((sum, ids) => sum + ids.length, 0);
-            console.log(`\n🔄 Resuming transfer from ${config.stateFile}`);
-            console.log(`   Started: ${transferState.startedAt}`);
-            console.log(`   Previously completed: ${completedCount} documents`);
-            stats = { ...transferState.stats };
-        } else if (!config.dryRun) {
-            // Create new state for tracking (only in non-dry-run mode)
-            transferState = createInitialState(config);
-            saveTransferState(config.stateFile, transferState);
-            console.log(`\n💾 State will be saved to ${config.stateFile} (use --resume to continue if interrupted)`);
-        }
-
-        // Load transform function if specified
-        let transformFn: TransformFunction | null = null;
-        if (config.transform) {
-            console.log(`\n🔧 Loading transform: ${config.transform}`);
-            transformFn = await loadTransformFunction(config.transform);
-            console.log('   Transform loaded successfully');
-        }
+        const { state: transferState, stats } = initializeResumeMode(config);
+        const transformFn = await loadTransform(config);
 
         console.log('\n');
-
         const { sourceDb, destDb } = initializeFirebase(config);
-
-        // Verify database connectivity before proceeding
         await checkDatabaseConnectivity(sourceDb, destDb, config);
 
-        // Validate transform with sample documents (in dry-run mode)
         if (transformFn && config.dryRun) {
             await validateTransformWithSamples(sourceDb, config, transformFn);
         }
 
-        if (!config.resume) {
-            stats = {
-                collectionsProcessed: 0,
-                documentsTransferred: 0,
-                documentsDeleted: 0,
-                errors: 0,
-            };
-        }
+        const currentStats = config.resume ? stats : createEmptyStats();
+        const { progressBar } = await setupProgressTracking(sourceDb, config, currentStats, argv.quiet);
 
-        // Count and setup progress bar
-        const { progressBar } = await setupProgressTracking(sourceDb, config, stats, argv.quiet);
-
-        // Clear destination collections if enabled
         if (config.clear) {
-            await clearDestinationCollections(destDb, config, stats, logger);
+            await clearDestinationCollections(destDb, config, currentStats, logger);
         }
 
-        // Create rate limiter if enabled
         const rateLimiter = config.rateLimit > 0 ? new RateLimiter(config.rateLimit) : null;
         if (rateLimiter) {
             console.log(`⏱️  Rate limiting enabled: ${config.rateLimit} docs/s\n`);
         }
 
-        const ctx: TransferContext = { sourceDb, destDb, config, stats, logger, progressBar, transformFn, state: transferState, rateLimiter };
+        const ctx: TransferContext = {
+            sourceDb, destDb, config, stats: currentStats, logger, progressBar, transformFn, state: transferState, rateLimiter
+        };
 
-        // Transfer collections (with optional parallelism)
         await executeTransfer(ctx, logger);
-
-        // Cleanup progress bar
         cleanupProgressBar(progressBar);
 
-        // Delete orphan documents if enabled (sync mode)
         if (config.deleteMissing) {
-            await deleteOrphanDocs(sourceDb, destDb, config, stats, logger);
+            await deleteOrphanDocs(sourceDb, destDb, config, currentStats, logger);
         }
 
         const duration = (Date.now() - startTime) / 1000;
+        logger.success('Transfer completed', { stats: currentStats as unknown as Record<string, unknown>, duration: duration.toFixed(2) });
+        logger.summary(currentStats, duration.toFixed(2));
 
-        logger.success('Transfer completed', {
-            stats: stats as unknown as Record<string, unknown>,
-            duration: duration.toFixed(2),
-        });
-        logger.summary(stats, duration.toFixed(2));
+        const verifyResult = config.verify && !config.dryRun
+            ? await verifyTransfer(sourceDb, destDb, config)
+            : null;
 
-        // Verify transfer if enabled (and not dry-run)
-        let verifyResult: Record<string, { source: number; dest: number; match: boolean }> | null = null;
-        if (config.verify && !config.dryRun) {
-            verifyResult = await verifyTransfer(sourceDb, destDb, config);
-        }
-
-        // Delete state file on successful completion
         if (!config.dryRun) {
             deleteTransferState(config.stateFile);
         }
 
-        // Output results
-        if (config.json) {
-            console.log(formatJsonOutput(true, config, stats, duration, undefined, verifyResult));
-        } else {
-            printSummary(stats, duration.toFixed(2), argv.log, config.dryRun);
-        }
-
-        // Send webhook notification if configured
-        if (config.webhook) {
-            await sendWebhook(
-                config.webhook,
-                {
-                    source: config.sourceProject!,
-                    destination: config.destProject!,
-                    collections: config.collections,
-                    stats,
-                    duration,
-                    dryRun: config.dryRun,
-                    success: true,
-                },
-                logger
-            );
-        }
-
+        await handleSuccessOutput(config, argv, currentStats, duration, verifyResult, logger);
         await cleanupFirebase();
 
-        return { success: true, stats, duration, verifyResult };
+        return { success: true, stats: currentStats, duration, verifyResult };
     } catch (error) {
         const errorMessage = (error as Error).message;
         const duration = (Date.now() - startTime) / 1000;
 
-        // Output error
-        if (config.json) {
-            console.log(formatJsonOutput(false, config, stats, duration, errorMessage));
-        } else {
-            console.error('\n❌ Error during transfer:', errorMessage);
-        }
-
-        // Send webhook notification on error if configured
-        if (config.webhook) {
-            await sendWebhook(
-                config.webhook,
-                {
-                    source: config.sourceProject ?? 'unknown',
-                    destination: config.destProject ?? 'unknown',
-                    collections: config.collections,
-                    stats,
-                    duration,
-                    dryRun: config.dryRun,
-                    success: false,
-                    error: errorMessage,
-                },
-                logger
-            );
-        }
-
+        await handleErrorOutput(config, createEmptyStats(), duration, errorMessage, logger);
         await cleanupFirebase();
 
-        return { success: false, stats, duration, error: errorMessage };
+        return { success: false, stats: createEmptyStats(), duration, error: errorMessage };
     }
 }
 
@@ -328,27 +327,33 @@ async function clearDestinationCollections(
     console.log(`   Deleted ${stats.documentsDeleted} documents\n`);
 }
 
+async function executeParallelTransfer(ctx: TransferContext, logger: Logger): Promise<void> {
+    const { errors } = await processInParallel(ctx.config.collections, ctx.config.parallel, (collection) =>
+        transferCollection(ctx, collection)
+    );
+    for (const err of errors) {
+        logger.error('Parallel transfer error', { error: err.message });
+        ctx.stats.errors++;
+    }
+}
+
+async function executeSequentialTransfer(ctx: TransferContext, logger: Logger): Promise<void> {
+    for (const collection of ctx.config.collections) {
+        try {
+            await transferCollection(ctx, collection);
+        } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            logger.error(`Transfer failed for ${collection}`, { error: err.message });
+            ctx.stats.errors++;
+        }
+    }
+}
+
 async function executeTransfer(ctx: TransferContext, logger: Logger): Promise<void> {
     if (ctx.config.parallel > 1) {
-        const { errors } = await processInParallel(ctx.config.collections, ctx.config.parallel, (collection) =>
-            transferCollection(ctx, collection)
-        );
-        if (errors.length > 0) {
-            for (const err of errors) {
-                logger.error('Parallel transfer error', { error: err.message });
-                ctx.stats.errors++;
-            }
-        }
+        await executeParallelTransfer(ctx, logger);
     } else {
-        for (const collection of ctx.config.collections) {
-            try {
-                await transferCollection(ctx, collection);
-            } catch (error) {
-                const err = error instanceof Error ? error : new Error(String(error));
-                logger.error(`Transfer failed for ${collection}`, { error: err.message });
-                ctx.stats.errors++;
-            }
-        }
+        await executeSequentialTransfer(ctx, logger);
     }
 }
 

@@ -62,40 +62,56 @@ bun dev -- -f config.ini                # Run with watch mode
 
 ## Architecture
 
-Single-file TypeScript CLI (`src/cli.ts`) with shebang `#!/usr/bin/env bun`.
+Modular TypeScript CLI with shebang `#!/usr/bin/env bun`.
 
-**Key components:**
+**Directory structure:**
 
-- `Logger` class - Handles file logging with timestamps
-- `withRetry()` - Exponential backoff retry logic
-- `cli-progress` - Progress bar with ETA
+```
+src/
+├── cli.ts              # Entry point, CLI args, main flow (~700 lines)
+├── types.ts            # Shared TypeScript interfaces
+├── interactive.ts      # Interactive mode prompts
+├── config/
+│   ├── defaults.ts     # Default config values and templates
+│   ├── generator.ts    # Config file generation (--init)
+│   ├── parser.ts       # INI/JSON parsing, config merging
+│   └── validator.ts    # Config validation
+├── state/
+│   └── index.ts        # Resume support (load/save state, atomic writes)
+├── transfer/
+│   ├── helpers.ts      # getSubcollections, getDestCollectionPath, getDestDocId
+│   ├── parallel.ts     # Parallel processing with error collection
+│   ├── count.ts        # Document counting with progress callbacks
+│   ├── clear.ts        # clearCollection, deleteOrphanDocuments
+│   └── transfer.ts     # Main transfer logic with transform support
+├── utils/
+│   ├── credentials.ts  # ADC check before Firebase init
+│   ├── logger.ts       # File logging with timestamps
+│   ├── patterns.ts     # Glob pattern matching for excludes
+│   └── retry.ts        # Exponential backoff retry logic
+├── webhook/
+│   └── index.ts        # Slack, Discord, custom webhook notifications
+└── __tests__/
+    ├── config.test.ts  # Config parsing and validation tests
+    └── retry.test.ts   # Retry logic tests
+```
 
 **Config resolution** (priority: CLI > config file > defaults):
 
 - `loadConfigFile()` parses INI or JSON based on extension
-- `parseIniConfig()` / `parseJsonConfig()` handle each format
 - `mergeConfig()` combines config sources
 - `validateConfig()` checks required fields
 
 **Transfer flow:**
 
-- `countDocuments()` - Counts total docs for progress bar
-- `initializeFirebase()` - Creates two Firebase Admin apps (source/dest)
-- `loadTransformFunction()` - Dynamically loads transform file (when --transform is used)
-- `clearCollection()` - Deletes all docs from destination (when --clear is used)
-- `transferCollection()` - Recursive function with retry handling, transform and rename support
-- `deleteOrphanDocuments()` - Deletes docs not in source (when --delete-missing is used)
-- `getSubcollections()` - Discovers nested collections via `listCollections()`
-- `getDestCollectionPath()` - Resolves renamed destination collection path
-- `getDestDocId()` - Applies prefix/suffix to document IDs
-- `sendWebhook()` - Sends POST notification to Slack, Discord, or custom URL
-- `loadTransferState()` / `saveTransferState()` - State persistence for resume support
-- `isDocCompleted()` / `markDocCompleted()` - Track completed documents
-
-**Tests:**
-
-- `src/__tests__/config.test.ts` - Config parsing and validation tests
-- `src/__tests__/retry.test.ts` - Retry logic tests
+1. `countDocuments()` - Counts total docs for progress bar (uses count() aggregation when possible)
+2. `initializeFirebase()` - Creates two Firebase Admin apps (source/dest)
+3. `checkDatabaseConnectivity()` - Verifies database access before transfer
+4. `loadTransformFunction()` - Dynamically loads transform file (when --transform is used)
+5. `clearCollection()` - Deletes all docs from destination (when --clear is used)
+6. `transferCollection()` - Recursive function with retry handling, transform and rename support
+7. `deleteOrphanDocuments()` - Deletes docs not in source (when --delete-missing is used)
+8. `sendWebhook()` - Sends POST notification to Slack, Discord, or custom URL
 
 ## Config Options
 

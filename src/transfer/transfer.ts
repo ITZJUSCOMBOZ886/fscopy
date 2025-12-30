@@ -2,8 +2,10 @@ import type { Firestore, WriteBatch } from 'firebase-admin/firestore';
 import type cliProgress from 'cli-progress';
 import type { Config, Stats, TransferState, TransformFunction } from '../types.js';
 import type { Logger } from '../utils/logger.js';
+import type { RateLimiter } from '../utils/rate-limiter.js';
 import { withRetry } from '../utils/retry.js';
 import { matchesExcludePattern } from '../utils/patterns.js';
+import { estimateDocumentSize, formatBytes, FIRESTORE_MAX_DOC_SIZE } from '../utils/doc-size.js';
 import { isDocCompleted, markDocCompleted, saveTransferState } from '../state/index.js';
 import { getSubcollections, getDestCollectionPath, getDestDocId } from './helpers.js';
 
@@ -16,6 +18,7 @@ export interface TransferContext {
     progressBar: cliProgress.SingleBar | null;
     transformFn: TransformFunction | null;
     state: TransferState | null;
+    rateLimiter: RateLimiter | null;
 }
 
 export async function transferCollection(
@@ -23,7 +26,7 @@ export async function transferCollection(
     collectionPath: string,
     depth: number = 0
 ): Promise<void> {
-    const { sourceDb, destDb, config, stats, logger, progressBar, transformFn, state } = ctx;
+    const { sourceDb, destDb, config, stats, logger, progressBar, transformFn, state, rateLimiter } = ctx;
 
     // Get the destination path (may be renamed)
     const destCollectionPath = getDestCollectionPath(collectionPath, config.renameCollection);
@@ -121,6 +124,27 @@ export async function transferCollection(
                 }
             }
 
+            // Check document size
+            const docSize = estimateDocumentSize(docData, `${destCollectionPath}/${destDocId}`);
+            if (docSize > FIRESTORE_MAX_DOC_SIZE) {
+                const sizeStr = formatBytes(docSize);
+                if (config.skipOversized) {
+                    logger.info(`Skipped oversized document (${sizeStr})`, {
+                        collection: collectionPath,
+                        docId: doc.id,
+                    });
+                    if (progressBar) {
+                        progressBar.increment();
+                    }
+                    batchDocIds.push(doc.id);
+                    continue;
+                } else {
+                    throw new Error(
+                        `Document ${collectionPath}/${doc.id} exceeds 1MB limit (${sizeStr}). Use --skip-oversized to skip.`
+                    );
+                }
+            }
+
             if (!config.dryRun) {
                 // Use merge option if enabled
                 if (config.merge) {
@@ -165,6 +189,11 @@ export async function transferCollection(
         }
 
         if (!config.dryRun && batch.length > 0) {
+            // Apply rate limiting before commit
+            if (rateLimiter) {
+                await rateLimiter.acquire(batchDocIds.length);
+            }
+
             await withRetry(() => destBatch.commit(), {
                 retries: config.retries,
                 onRetry: (attempt, max, err, delay) => {

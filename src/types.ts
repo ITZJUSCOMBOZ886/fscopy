@@ -31,6 +31,9 @@ export interface Config {
     resume: boolean;
     stateFile: string;
     verify: boolean;
+    rateLimit: number;
+    skipOversized: boolean;
+    json: boolean;
 }
 
 export interface Stats {
@@ -92,4 +95,7 @@ export interface CliArgs {
     resume?: boolean;
     stateFile?: string;
     verify?: boolean;
+    rateLimit?: number;
+    skipOversized?: boolean;
+    json?: boolean;
 }

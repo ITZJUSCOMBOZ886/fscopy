@@ -54,6 +54,10 @@ fscopy -f config.ini --id-prefix backup_  # Add prefix to document IDs
 fscopy -f config.ini --webhook https://hooks.slack.com/... # Webhook notification
 fscopy -f config.ini --resume                            # Resume interrupted transfer
 fscopy -f config.ini --state-file ./custom.state.json    # Custom state file path
+fscopy -f config.ini --verify                            # Verify counts after transfer
+fscopy -f config.ini --rate-limit 100                    # Limit to 100 docs/s
+fscopy -f config.ini --skip-oversized                    # Skip docs > 1MB
+fscopy -f config.ini --json                              # JSON output for CI/CD
 
 # Local development:
 bun start -- -f config.ini              # Run locally
@@ -86,8 +90,11 @@ src/
 │   └── transfer.ts     # Main transfer logic with transform support
 ├── utils/
 │   ├── credentials.ts  # ADC check before Firebase init
+│   ├── doc-size.ts     # Document size estimation (1MB limit check)
+│   ├── errors.ts       # Firebase error formatting with suggestions
 │   ├── logger.ts       # File logging with timestamps
 │   ├── patterns.ts     # Glob pattern matching for excludes
+│   ├── rate-limiter.ts # Token bucket rate limiter
 │   └── retry.ts        # Exponential backoff retry logic
 ├── webhook/
 │   └── index.ts        # Slack, Discord, custom webhook notifications
@@ -144,3 +151,7 @@ INI format uses `[projects]` section for source/dest and `[transfer]` section fo
 | Webhook        | `--webhook`        | `webhook` ([options])      | `webhook`               | null     |
 | Resume         | `--resume`         | -                          | -                       | false    |
 | State file     | `--state-file`     | -                          | -                       | .fscopy-state.json |
+| Verify         | `--verify`         | -                          | -                       | false    |
+| Rate limit     | `--rate-limit`     | -                          | -                       | 0 (none) |
+| Skip oversized | `--skip-oversized` | -                          | -                       | false    |
+| JSON output    | `--json`           | -                          | -                       | false    |

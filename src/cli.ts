@@ -17,6 +17,7 @@ import type { Config, Stats, TransferState, TransformFunction, CliArgs } from '.
 import { Logger } from './utils/logger.js';
 import { ensureCredentials } from './utils/credentials.js';
 import { formatFirebaseError } from './utils/errors.js';
+import { RateLimiter } from './utils/rate-limiter.js';
 import { loadConfigFile, mergeConfig } from './config/parser.js';
 import { validateConfig } from './config/validator.js';
 import { defaults } from './config/defaults.js';
@@ -173,6 +174,21 @@ const argv = yargs(hideBin(process.argv))
         description: 'Verify document counts after transfer',
         default: false,
     })
+    .option('rate-limit', {
+        type: 'number',
+        description: 'Limit transfer rate (documents per second, 0 = unlimited)',
+        default: 0,
+    })
+    .option('skip-oversized', {
+        type: 'boolean',
+        description: 'Skip documents exceeding 1MB instead of failing',
+        default: false,
+    })
+    .option('json', {
+        type: 'boolean',
+        description: 'Output results in JSON format (for CI/CD)',
+        default: false,
+    })
     .example('$0 --init config.ini', 'Generate INI config template (default)')
     .example('$0 --init config.json', 'Generate JSON config template')
     .example('$0 -f config.ini', 'Run transfer with config file')
@@ -283,6 +299,12 @@ function displayConfig(config: Config): void {
             .filter(Boolean)
             .join(', ');
         console.log(`  🏷️  ID modification:      ${idMod}`);
+    }
+    if (config.rateLimit > 0) {
+        console.log(`  ⏱️  Rate limit:          ${config.rateLimit} docs/s`);
+    }
+    if (config.skipOversized) {
+        console.log(`  📏 Skip oversized:       enabled (skip docs > 1MB)`);
     }
 
     console.log('');
@@ -610,7 +632,13 @@ try {
         console.log(`   Deleted ${stats.documentsDeleted} documents\n`);
     }
 
-    const ctx: TransferContext = { sourceDb, destDb, config, stats, logger, progressBar, transformFn, state: transferState };
+    // Create rate limiter if enabled
+    const rateLimiter = config.rateLimit > 0 ? new RateLimiter(config.rateLimit) : null;
+    if (rateLimiter) {
+        console.log(`⏱️  Rate limiting enabled: ${config.rateLimit} docs/s\n`);
+    }
+
+    const ctx: TransferContext = { sourceDb, destDb, config, stats, logger, progressBar, transformFn, state: transferState, rateLimiter };
 
     // Transfer collections (with optional parallelism)
     if (config.parallel > 1) {
@@ -672,24 +700,13 @@ try {
     });
     logger.summary(stats, duration);
 
-    console.log('\n' + '='.repeat(60));
-    console.log('📊 TRANSFER SUMMARY');
-    console.log('='.repeat(60));
-    console.log(`Collections processed: ${stats.collectionsProcessed}`);
-    if (stats.documentsDeleted > 0) {
-        console.log(`Documents deleted:     ${stats.documentsDeleted}`);
-    }
-    console.log(`Documents transferred: ${stats.documentsTransferred}`);
-    console.log(`Errors: ${stats.errors}`);
-    console.log(`Duration: ${duration}s`);
-
-    if (argv.log) {
-        console.log(`Log file: ${argv.log}`);
-    }
-
     // Verify transfer if enabled (and not dry-run)
+    let verifyResult: Record<string, { source: number; dest: number; match: boolean }> | null = null;
     if (config.verify && !config.dryRun) {
-        console.log('\n🔍 Verifying transfer...');
+        if (!config.json) {
+            console.log('\n🔍 Verifying transfer...');
+        }
+        verifyResult = {};
         let verifyPassed = true;
 
         for (const collection of config.collections) {
@@ -703,30 +720,75 @@ try {
             const destCount = await destDb.collection(destCollection).count().get();
             const destTotal = destCount.data().count;
 
-            if (sourceTotal === destTotal) {
-                console.log(`   ✓ ${collection}: ${sourceTotal} docs (matched)`);
+            const match = sourceTotal === destTotal;
+            verifyResult[collection] = { source: sourceTotal, dest: destTotal, match };
+
+            if (!config.json) {
+                if (match) {
+                    console.log(`   ✓ ${collection}: ${sourceTotal} docs (matched)`);
+                } else {
+                    console.log(`   ⚠️  ${collection}: source=${sourceTotal}, dest=${destTotal} (mismatch)`);
+                }
+            }
+            if (!match) verifyPassed = false;
+        }
+
+        if (!config.json) {
+            if (verifyPassed) {
+                console.log('   ✓ Verification passed');
             } else {
-                console.log(`   ⚠️  ${collection}: source=${sourceTotal}, dest=${destTotal} (mismatch)`);
-                verifyPassed = false;
+                console.log('   ⚠️  Verification found mismatches');
             }
         }
-
-        if (verifyPassed) {
-            console.log('   ✓ Verification passed');
-        } else {
-            console.log('   ⚠️  Verification found mismatches');
-        }
     }
 
-    if (config.dryRun) {
-        console.log('\n⚠ DRY RUN: No data was actually written');
-        console.log('   Run with --dry-run=false to perform the transfer');
-    } else {
-        console.log('\n✓ Transfer completed successfully');
-        // Delete state file on successful completion
+    // Delete state file on successful completion (before JSON output)
+    if (!config.dryRun) {
         deleteTransferState(config.stateFile);
     }
-    console.log('='.repeat(60) + '\n');
+
+    // JSON output mode
+    if (config.json) {
+        const jsonOutput = {
+            success: true,
+            dryRun: config.dryRun,
+            source: config.sourceProject,
+            destination: config.destProject,
+            collections: config.collections,
+            stats: {
+                collectionsProcessed: stats.collectionsProcessed,
+                documentsTransferred: stats.documentsTransferred,
+                documentsDeleted: stats.documentsDeleted,
+                errors: stats.errors,
+            },
+            duration: Number.parseFloat(duration),
+            verify: verifyResult,
+        };
+        console.log(JSON.stringify(jsonOutput, null, 2));
+    } else {
+        console.log('\n' + '='.repeat(60));
+        console.log('📊 TRANSFER SUMMARY');
+        console.log('='.repeat(60));
+        console.log(`Collections processed: ${stats.collectionsProcessed}`);
+        if (stats.documentsDeleted > 0) {
+            console.log(`Documents deleted:     ${stats.documentsDeleted}`);
+        }
+        console.log(`Documents transferred: ${stats.documentsTransferred}`);
+        console.log(`Errors: ${stats.errors}`);
+        console.log(`Duration: ${duration}s`);
+
+        if (argv.log) {
+            console.log(`Log file: ${argv.log}`);
+        }
+
+        if (config.dryRun) {
+            console.log('\n⚠ DRY RUN: No data was actually written');
+            console.log('   Run with --dry-run=false to perform the transfer');
+        } else {
+            console.log('\n✓ Transfer completed successfully');
+        }
+        console.log('='.repeat(60) + '\n');
+    }
 
     // Send webhook notification if configured
     if (config.webhook) {
@@ -748,7 +810,29 @@ try {
     await cleanupFirebase();
 } catch (error) {
     const errorMessage = (error as Error).message;
-    console.error('\n❌ Error during transfer:', errorMessage);
+    const duration = Number.parseFloat(((Date.now() - startTime) / 1000).toFixed(2));
+
+    // JSON output mode for errors
+    if (config.json) {
+        const jsonOutput = {
+            success: false,
+            error: errorMessage,
+            dryRun: config.dryRun,
+            source: config.sourceProject,
+            destination: config.destProject,
+            collections: config.collections,
+            stats: {
+                collectionsProcessed: stats.collectionsProcessed,
+                documentsTransferred: stats.documentsTransferred,
+                documentsDeleted: stats.documentsDeleted,
+                errors: stats.errors,
+            },
+            duration,
+        };
+        console.log(JSON.stringify(jsonOutput, null, 2));
+    } else {
+        console.error('\n❌ Error during transfer:', errorMessage);
+    }
 
     // Send webhook notification on error if configured
     if (config.webhook && logger) {
@@ -759,7 +843,7 @@ try {
                 destination: config.destProject ?? 'unknown',
                 collections: config.collections,
                 stats,
-                duration: Number.parseFloat(((Date.now() - startTime) / 1000).toFixed(2)),
+                duration,
                 dryRun: config.dryRun,
                 success: false,
                 error: errorMessage,

@@ -23,6 +23,9 @@ export const defaults: Config = {
     resume: false,
     stateFile: '.fscopy-state.json',
     verify: false,
+    rateLimit: 0,
+    skipOversized: false,
+    json: false,
 };
 
 export const iniTemplate = `; fscopy configuration file

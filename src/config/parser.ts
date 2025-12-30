@@ -254,5 +254,8 @@ export function mergeConfig(
         resume: cliArgs.resume ?? defaultConfig.resume,
         stateFile: cliArgs.stateFile ?? defaultConfig.stateFile,
         verify: cliArgs.verify ?? defaultConfig.verify,
+        rateLimit: cliArgs.rateLimit ?? defaultConfig.rateLimit,
+        skipOversized: cliArgs.skipOversized ?? defaultConfig.skipOversized,
+        json: cliArgs.json ?? defaultConfig.json,
     };
 }

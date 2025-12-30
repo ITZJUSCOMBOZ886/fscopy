@@ -19,7 +19,7 @@ const errorMap: Record<string, FirebaseErrorInfo> = {
         message: 'Permission denied',
         suggestion: 'Ensure you have Firestore read/write access on this project',
     },
-    'PERMISSION_DENIED': {
+    PERMISSION_DENIED: {
         message: 'Permission denied',
         suggestion: 'Ensure you have Firestore read/write access on this project',
     },

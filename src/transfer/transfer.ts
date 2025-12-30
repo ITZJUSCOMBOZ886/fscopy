@@ -44,7 +44,7 @@ async function captureDestUpdateTimes(
     const updateTimes: UpdateTimeMap = new Map();
 
     // Batch get dest docs to get their updateTime
-    const docRefs = destDocIds.map(id => destDb.collection(destCollectionPath).doc(id));
+    const docRefs = destDocIds.map((id) => destDb.collection(destCollectionPath).doc(id));
     const docs = await destDb.getAll(...docRefs);
 
     for (let i = 0; i < docs.length; i++) {
@@ -73,7 +73,7 @@ async function checkForConflicts(
 ): Promise<string[]> {
     const conflicts: string[] = [];
 
-    const docRefs = destDocIds.map(id => destDb.collection(destCollectionPath).doc(id));
+    const docRefs = destDocIds.map((id) => destDb.collection(destCollectionPath).doc(id));
     const docs = await destDb.getAll(...docRefs);
 
     for (let i = 0; i < docs.length; i++) {
@@ -81,9 +81,8 @@ async function checkForConflicts(
         const docId = destDocIds[i];
         const capturedTime = capturedTimes.get(docId);
 
-        const currentTime = doc.exists && doc.updateTime
-            ? doc.updateTime.toDate().toISOString()
-            : null;
+        const currentTime =
+            doc.exists && doc.updateTime ? doc.updateTime.toDate().toISOString() : null;
 
         // Conflict conditions:
         // 1. Doc didn't exist before but now exists (created by someone else)
@@ -147,7 +146,8 @@ function applyTransform(
 
         return { success: true, data: transformed, markCompleted: false };
     } catch (transformError) {
-        const errMsg = transformError instanceof Error ? transformError.message : String(transformError);
+        const errMsg =
+            transformError instanceof Error ? transformError.message : String(transformError);
         output.logError(`Transform failed for document ${doc.id}`, {
             collection: collectionPath,
             error: errMsg,
@@ -236,7 +236,14 @@ function processDocument(
 
     // Apply transform if provided
     if (transformFn) {
-        const transformResult = applyTransform(docData, doc, collectionPath, transformFn, output, stats);
+        const transformResult = applyTransform(
+            docData,
+            doc,
+            collectionPath,
+            transformFn,
+            output,
+            stats
+        );
         if (!transformResult.success) {
             return { skip: true, markCompleted: transformResult.markCompleted };
         }
@@ -244,7 +251,15 @@ function processDocument(
     }
 
     // Check document size
-    const sizeResult = checkDocumentSize(docData, doc, collectionPath, destCollectionPath, destDocId, config, output);
+    const sizeResult = checkDocumentSize(
+        docData,
+        doc,
+        collectionPath,
+        destCollectionPath,
+        destDocId,
+        config,
+        output
+    );
     if (!sizeResult.valid) {
         return { skip: true, markCompleted: sizeResult.markCompleted };
     }
@@ -341,7 +356,7 @@ async function verifyBatchIntegrity(
     stats: Stats,
     output: Output
 ): Promise<void> {
-    const docRefs = preparedDocs.map(p => destDb.collection(destCollectionPath).doc(p.destDocId));
+    const docRefs = preparedDocs.map((p) => destDb.collection(destCollectionPath).doc(p.destDocId));
     const destDocs = await destDb.getAll(...docRefs);
 
     for (let i = 0; i < destDocs.length; i++) {
@@ -350,7 +365,9 @@ async function verifyBatchIntegrity(
 
         if (!destDoc.exists) {
             stats.integrityErrors++;
-            output.warn(`⚠️  Integrity error: ${destCollectionPath}/${prepared.destDocId} not found after write`);
+            output.warn(
+                `⚠️  Integrity error: ${destCollectionPath}/${prepared.destDocId} not found after write`
+            );
             output.logError('Integrity verification failed', {
                 collection: destCollectionPath,
                 docId: prepared.destDocId,
@@ -364,7 +381,9 @@ async function verifyBatchIntegrity(
 
         if (!compareHashes(prepared.sourceHash!, destHash)) {
             stats.integrityErrors++;
-            output.warn(`⚠️  Integrity error: ${destCollectionPath}/${prepared.destDocId} hash mismatch`);
+            output.warn(
+                `⚠️  Integrity error: ${destCollectionPath}/${prepared.destDocId} hash mismatch`
+            );
             output.logError('Integrity verification failed', {
                 collection: destCollectionPath,
                 docId: prepared.destDocId,
@@ -389,7 +408,14 @@ async function commitPreparedDocs(
 
     for (const prepared of preparedDocs) {
         if (!config.dryRun) {
-            addDocToBatch(destBatch, destDb, destCollectionPath, prepared.destDocId, prepared.data, config.merge);
+            addDocToBatch(
+                destBatch,
+                destDb,
+                destCollectionPath,
+                prepared.destDocId,
+                prepared.data,
+                config.merge
+            );
         }
 
         batchDocIds.push(prepared.sourceDocId);
@@ -444,17 +470,22 @@ async function processBatch(
     // Step 2: If conflict detection is enabled, capture dest updateTimes and check for conflicts
     let docsToWrite = preparedDocs;
     if (config.detectConflicts && !config.dryRun) {
-        const destDocIds = preparedDocs.map(p => p.destDocId);
+        const destDocIds = preparedDocs.map((p) => p.destDocId);
         const capturedTimes = await captureDestUpdateTimes(destDb, destCollectionPath, destDocIds);
 
         // Check for conflicts
-        const conflictingIds = await checkForConflicts(destDb, destCollectionPath, destDocIds, capturedTimes);
+        const conflictingIds = await checkForConflicts(
+            destDb,
+            destCollectionPath,
+            destDocIds,
+            capturedTimes
+        );
 
         if (conflictingIds.length > 0) {
             const conflictSet = new Set(conflictingIds);
 
             // Filter out conflicting docs
-            docsToWrite = preparedDocs.filter(p => !conflictSet.has(p.destDocId));
+            docsToWrite = preparedDocs.filter((p) => !conflictSet.has(p.destDocId));
 
             // Record conflicts
             for (const prepared of preparedDocs) {
@@ -465,7 +496,9 @@ async function processBatch(
                         docId: prepared.destDocId,
                         reason: 'Document was modified during transfer',
                     });
-                    output.warn(`⚠️  Conflict detected: ${destCollectionPath}/${prepared.destDocId} was modified during transfer`);
+                    output.warn(
+                        `⚠️  Conflict detected: ${destCollectionPath}/${prepared.destDocId} was modified during transfer`
+                    );
                     output.logError('Conflict detected', {
                         collection: destCollectionPath,
                         docId: prepared.destDocId,
@@ -493,7 +526,10 @@ export async function transferCollection(
     const snapshot = await withRetry(() => query.get(), {
         retries: config.retries,
         onRetry: (attempt, max, err, delay) => {
-            output.logError(`Retry ${attempt}/${max} for ${collectionPath}`, { error: err.message, delay });
+            output.logError(`Retry ${attempt}/${max} for ${collectionPath}`, {
+                error: err.message,
+                delay,
+            });
         },
     });
 

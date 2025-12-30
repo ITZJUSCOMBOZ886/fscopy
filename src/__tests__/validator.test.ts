@@ -1,5 +1,9 @@
 import { describe, test, expect } from 'bun:test';
-import { validateConfig, validateFirestoreId, validateCollectionPath } from '../config/validator.js';
+import {
+    validateConfig,
+    validateFirestoreId,
+    validateCollectionPath,
+} from '../config/validator.js';
 import type { Config } from '../types.js';
 
 // Helper to create a valid base config

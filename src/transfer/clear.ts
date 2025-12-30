@@ -114,7 +114,13 @@ async function deleteOrphanBatch(
 
     for (const doc of batch) {
         if (config.includeSubcollections) {
-            deletedCount += await clearOrphanSubcollections(destDb, doc, destCollectionPath, config, output);
+            deletedCount += await clearOrphanSubcollections(
+                destDb,
+                doc,
+                destCollectionPath,
+                config,
+                output
+            );
         }
         writeBatch.delete(doc.ref);
         deletedCount++;
@@ -124,10 +130,13 @@ async function deleteOrphanBatch(
         await withRetry(() => writeBatch.commit(), {
             retries: config.retries,
             onRetry: (attempt, max, err, delay) => {
-                output.logError(`Retry delete orphans ${attempt}/${max} for ${destCollectionPath}`, {
-                    error: err.message,
-                    delay,
-                });
+                output.logError(
+                    `Retry delete orphans ${attempt}/${max} for ${destCollectionPath}`,
+                    {
+                        error: err.message,
+                        delay,
+                    }
+                );
             },
         });
     }
@@ -181,13 +190,24 @@ export async function deleteOrphanDocuments(
 
         for (let i = 0; i < orphanDocs.length; i += config.batchSize) {
             const batch = orphanDocs.slice(i, i + config.batchSize);
-            deletedCount += await deleteOrphanBatch(destDb, batch, destCollectionPath, config, output);
+            deletedCount += await deleteOrphanBatch(
+                destDb,
+                batch,
+                destCollectionPath,
+                config,
+                output
+            );
         }
     }
 
     if (config.includeSubcollections) {
         deletedCount += await processSubcollectionOrphans(
-            sourceDb, destDb, sourceSnapshot, sourceCollectionPath, config, output
+            sourceDb,
+            destDb,
+            sourceSnapshot,
+            sourceCollectionPath,
+            config,
+            output
         );
     }
 

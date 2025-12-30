@@ -18,10 +18,10 @@ export function parseSize(sizeStr: string | undefined): number {
     const unit = (match[2] || 'B').toUpperCase();
 
     const multipliers: Record<string, number> = {
-        'B': 1,
-        'KB': 1024,
-        'MB': 1024 * 1024,
-        'GB': 1024 * 1024 * 1024,
+        B: 1,
+        KB: 1024,
+        MB: 1024 * 1024,
+        GB: 1024 * 1024 * 1024,
     };
 
     return Math.floor(value * (multipliers[unit] || 1));

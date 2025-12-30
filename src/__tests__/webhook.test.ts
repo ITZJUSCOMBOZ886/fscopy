@@ -268,7 +268,9 @@ describe('sendWebhook', () => {
     });
 
     test('handles fetch errors gracefully', async () => {
-        globalThis.fetch = mock(() => Promise.reject(new Error('Network error'))) as unknown as typeof fetch;
+        globalThis.fetch = mock(() =>
+            Promise.reject(new Error('Network error'))
+        ) as unknown as typeof fetch;
         const output = new Output();
         const payload = createPayload();
 

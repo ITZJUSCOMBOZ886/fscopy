@@ -17,11 +17,9 @@ const mockDelete = mock(() => Promise.resolve());
 const mockCountGet = mock(() => Promise.resolve({ data: () => ({ count: 10 }) }));
 const mockCount = mock(() => ({ get: mockCountGet }));
 const mockCollection = mock(() => ({ count: mockCount }));
-const mockListCollections = mock(() => Promise.resolve([
-    { id: 'users' },
-    { id: 'orders' },
-    { id: 'products' },
-]));
+const mockListCollections = mock(() =>
+    Promise.resolve([{ id: 'users' }, { id: 'orders' }, { id: 'products' }])
+);
 const mockFirestore = mock(() => ({
     collection: mockCollection,
     listCollections: mockListCollections,
@@ -97,10 +95,9 @@ describe('Interactive Mode', () => {
         mockCheckbox.mockImplementation(() => Promise.resolve(['users']));
         mockConfirm.mockImplementation(() => Promise.resolve(true));
         mockInitializeApp.mockImplementation(() => mockApp);
-        mockListCollections.mockImplementation(() => Promise.resolve([
-            { id: 'users' },
-            { id: 'orders' },
-        ]));
+        mockListCollections.mockImplementation(() =>
+            Promise.resolve([{ id: 'users' }, { id: 'orders' }])
+        );
         mockCountGet.mockImplementation(() => Promise.resolve({ data: () => ({ count: 10 }) }));
 
         // Suppress console output during tests
@@ -136,11 +133,9 @@ describe('Interactive Mode', () => {
 
     describe('collection selection', () => {
         test('lists collections from source project', async () => {
-            mockListCollections.mockImplementation(() => Promise.resolve([
-                { id: 'users' },
-                { id: 'orders' },
-                { id: 'products' },
-            ]));
+            mockListCollections.mockImplementation(() =>
+                Promise.resolve([{ id: 'users' }, { id: 'orders' }, { id: 'products' }])
+            );
             mockCheckbox.mockImplementation(() => Promise.resolve(['users', 'orders']));
 
             const config = createBaseConfig({
@@ -282,10 +277,9 @@ describe('Interactive Mode', () => {
         });
 
         test('counts documents in each collection', async () => {
-            mockListCollections.mockImplementation(() => Promise.resolve([
-                { id: 'users' },
-                { id: 'orders' },
-            ]));
+            mockListCollections.mockImplementation(() =>
+                Promise.resolve([{ id: 'users' }, { id: 'orders' }])
+            );
 
             const config = createBaseConfig({
                 sourceProject: 'source',

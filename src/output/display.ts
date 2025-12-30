@@ -25,19 +25,84 @@ function displayAdditionalOptions(config: Config): void {
             label: 'Where filters',
             value: config.where.map((w) => `${w.field} ${w.operator} ${w.value}`).join(', '),
         },
-        { condition: config.exclude.length > 0, icon: '🚫', label: 'Exclude patterns', value: config.exclude.join(', ') },
-        { condition: config.merge, icon: '🔀', label: 'Merge mode', value: 'enabled (merge instead of overwrite)' },
-        { condition: config.parallel > 1, icon: '⚡', label: 'Parallel transfers', value: `${config.parallel} collections` },
-        { condition: config.clear, icon: '🗑️ ', label: 'Clear destination', value: 'enabled (DESTRUCTIVE)' },
-        { condition: config.deleteMissing, icon: '🔄', label: 'Delete missing', value: 'enabled (sync mode)' },
-        { condition: Boolean(config.transform), icon: '🔧', label: 'Transform', value: config.transform ?? '' },
-        { condition: Boolean(formatRenameCollections(config)), icon: '📝', label: 'Rename collections', value: formatRenameCollections(config) ?? '' },
-        { condition: Boolean(formatIdModification(config)), icon: '🏷️ ', label: 'ID modification', value: formatIdModification(config) ?? '' },
-        { condition: config.rateLimit > 0, icon: '⏱️ ', label: 'Rate limit', value: `${config.rateLimit} docs/s` },
-        { condition: config.skipOversized, icon: '📏', label: 'Skip oversized', value: 'enabled (skip docs > 1MB)' },
-        { condition: config.detectConflicts, icon: '🔒', label: 'Detect conflicts', value: 'enabled' },
-        { condition: config.maxDepth > 0, icon: '📊', label: 'Max depth', value: `${config.maxDepth} level(s)` },
-        { condition: config.verifyIntegrity, icon: '✅', label: 'Verify integrity', value: 'enabled (hash verification)' },
+        {
+            condition: config.exclude.length > 0,
+            icon: '🚫',
+            label: 'Exclude patterns',
+            value: config.exclude.join(', '),
+        },
+        {
+            condition: config.merge,
+            icon: '🔀',
+            label: 'Merge mode',
+            value: 'enabled (merge instead of overwrite)',
+        },
+        {
+            condition: config.parallel > 1,
+            icon: '⚡',
+            label: 'Parallel transfers',
+            value: `${config.parallel} collections`,
+        },
+        {
+            condition: config.clear,
+            icon: '🗑️ ',
+            label: 'Clear destination',
+            value: 'enabled (DESTRUCTIVE)',
+        },
+        {
+            condition: config.deleteMissing,
+            icon: '🔄',
+            label: 'Delete missing',
+            value: 'enabled (sync mode)',
+        },
+        {
+            condition: Boolean(config.transform),
+            icon: '🔧',
+            label: 'Transform',
+            value: config.transform ?? '',
+        },
+        {
+            condition: Boolean(formatRenameCollections(config)),
+            icon: '📝',
+            label: 'Rename collections',
+            value: formatRenameCollections(config) ?? '',
+        },
+        {
+            condition: Boolean(formatIdModification(config)),
+            icon: '🏷️ ',
+            label: 'ID modification',
+            value: formatIdModification(config) ?? '',
+        },
+        {
+            condition: config.rateLimit > 0,
+            icon: '⏱️ ',
+            label: 'Rate limit',
+            value: `${config.rateLimit} docs/s`,
+        },
+        {
+            condition: config.skipOversized,
+            icon: '📏',
+            label: 'Skip oversized',
+            value: 'enabled (skip docs > 1MB)',
+        },
+        {
+            condition: config.detectConflicts,
+            icon: '🔒',
+            label: 'Detect conflicts',
+            value: 'enabled',
+        },
+        {
+            condition: config.maxDepth > 0,
+            icon: '📊',
+            label: 'Max depth',
+            value: `${config.maxDepth} level(s)`,
+        },
+        {
+            condition: config.verifyIntegrity,
+            icon: '✅',
+            label: 'Verify integrity',
+            value: 'enabled (hash verification)',
+        },
     ];
 
     for (const opt of options) {
@@ -66,9 +131,11 @@ export function displayConfig(config: Config): void {
     displayAdditionalOptions(config);
 
     console.log('');
-    console.log(config.dryRun
-        ? '  🔍 Mode:                 DRY RUN (no data will be written)'
-        : '  ⚡ Mode:                 LIVE (data WILL be transferred)');
+    console.log(
+        config.dryRun
+            ? '  🔍 Mode:                 DRY RUN (no data will be written)'
+            : '  ⚡ Mode:                 LIVE (data WILL be transferred)'
+    );
     console.log('');
     console.log('='.repeat(60));
 }
@@ -88,7 +155,12 @@ export async function askConfirmation(config: Config): Promise<boolean> {
     });
 }
 
-export function printSummary(stats: Stats, duration: string, logFile?: string, dryRun?: boolean): void {
+export function printSummary(
+    stats: Stats,
+    duration: string,
+    logFile?: string,
+    dryRun?: boolean
+): void {
     console.log('\n' + '='.repeat(60));
     console.log('📊 TRANSFER SUMMARY');
     console.log('='.repeat(60));

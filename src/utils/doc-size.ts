@@ -18,10 +18,7 @@ export const FIRESTORE_MAX_DOC_SIZE = 1024 * 1024;
  * - GeoPoints: 16 bytes
  * - References: document path length + 1
  */
-export function estimateDocumentSize(
-    data: Record<string, unknown>,
-    docPath?: string
-): number {
+export function estimateDocumentSize(data: Record<string, unknown>, docPath?: string): number {
     let size = 0;
 
     // Document name (path) contributes to size

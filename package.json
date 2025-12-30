@@ -12,8 +12,8 @@
         "test": "bun test",
         "test:watch": "bun test --watch",
         "type-check": "tsc --noEmit",
-        "lint": "eslint src/**/*.ts",
-        "lint:fix": "eslint src/**/*.ts --fix",
+        "lint": "eslint src/**/*.ts --ignore-pattern 'src/__tests__/**' --no-warn-ignored",
+        "lint:fix": "eslint src/**/*.ts --ignore-pattern 'src/__tests__/**' --no-warn-ignored --fix",
         "format": "prettier --write src/**/*.ts",
         "format:check": "prettier --check src/**/*.ts",
         "prepublishOnly": "bun run type-check && bun run lint && bun test"

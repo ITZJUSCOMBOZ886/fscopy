@@ -40,7 +40,12 @@ async function countWithSubcollections(
 
     for (const doc of snapshot.docs) {
         count += await countSubcollectionsForDoc(
-            sourceDb, doc, collectionPath, config, depth, progress
+            sourceDb,
+            doc,
+            collectionPath,
+            config,
+            depth,
+            progress
         );
     }
 

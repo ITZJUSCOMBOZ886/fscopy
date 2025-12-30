@@ -17,9 +17,8 @@ export class Logger {
 
     constructor(optionsOrPath?: LoggerOptions | string) {
         // Backward compatibility: accept string as logPath
-        const options: LoggerOptions = typeof optionsOrPath === 'string'
-            ? { logPath: optionsOrPath }
-            : optionsOrPath ?? {};
+        const options: LoggerOptions =
+            typeof optionsOrPath === 'string' ? { logPath: optionsOrPath } : (optionsOrPath ?? {});
 
         this.logPath = options.logPath;
         this.maxSize = options.maxSize ?? 0;

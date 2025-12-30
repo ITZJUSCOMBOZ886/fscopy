@@ -7,7 +7,10 @@ import os from 'node:os';
 const CLI_PATH = path.resolve(__dirname, '../cli.ts');
 const TEST_DIR = path.join(os.tmpdir(), 'fscopy-cli-test');
 
-async function runCli(args: string[], options: { cwd?: string } = {}): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+async function runCli(
+    args: string[],
+    options: { cwd?: string } = {}
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
     const proc = spawn({
         cmd: ['bun', 'run', CLI_PATH, ...args],
         stdout: 'pipe',
@@ -133,10 +136,13 @@ describe('CLI', () => {
     describe('config validation', () => {
         test('fails with missing source project', async () => {
             const configPath = path.join(TEST_DIR, 'missing-source.json');
-            fs.writeFileSync(configPath, JSON.stringify({
-                destProject: 'dest-project',
-                collections: ['users'],
-            }));
+            fs.writeFileSync(
+                configPath,
+                JSON.stringify({
+                    destProject: 'dest-project',
+                    collections: ['users'],
+                })
+            );
 
             const { exitCode, stdout } = await runCli(['-f', configPath, '-y']);
 
@@ -146,10 +152,13 @@ describe('CLI', () => {
 
         test('fails with missing dest project', async () => {
             const configPath = path.join(TEST_DIR, 'missing-dest.json');
-            fs.writeFileSync(configPath, JSON.stringify({
-                sourceProject: 'source-project',
-                collections: ['users'],
-            }));
+            fs.writeFileSync(
+                configPath,
+                JSON.stringify({
+                    sourceProject: 'source-project',
+                    collections: ['users'],
+                })
+            );
 
             const { exitCode, stdout } = await runCli(['-f', configPath, '-y']);
 
@@ -159,11 +168,14 @@ describe('CLI', () => {
 
         test('fails with empty collections', async () => {
             const configPath = path.join(TEST_DIR, 'empty-collections.json');
-            fs.writeFileSync(configPath, JSON.stringify({
-                sourceProject: 'source-project',
-                destProject: 'dest-project',
-                collections: [],
-            }));
+            fs.writeFileSync(
+                configPath,
+                JSON.stringify({
+                    sourceProject: 'source-project',
+                    destProject: 'dest-project',
+                    collections: [],
+                })
+            );
 
             const { exitCode, stdout } = await runCli(['-f', configPath, '-y']);
 
@@ -173,11 +185,14 @@ describe('CLI', () => {
 
         test('fails when source equals dest without rename or id modification', async () => {
             const configPath = path.join(TEST_DIR, 'same-project.json');
-            fs.writeFileSync(configPath, JSON.stringify({
-                sourceProject: 'same-project',
-                destProject: 'same-project',
-                collections: ['users'],
-            }));
+            fs.writeFileSync(
+                configPath,
+                JSON.stringify({
+                    sourceProject: 'same-project',
+                    destProject: 'same-project',
+                    collections: ['users'],
+                })
+            );
 
             const { exitCode, stdout } = await runCli(['-f', configPath, '-y']);
 
@@ -189,17 +204,22 @@ describe('CLI', () => {
     describe('CLI argument merging', () => {
         test('CLI args override config file values', async () => {
             const configPath = path.join(TEST_DIR, 'override-test.json');
-            fs.writeFileSync(configPath, JSON.stringify({
-                sourceProject: 'config-source',
-                destProject: 'config-dest',
-                collections: ['users'],
-                dryRun: false,
-            }));
+            fs.writeFileSync(
+                configPath,
+                JSON.stringify({
+                    sourceProject: 'config-source',
+                    destProject: 'config-dest',
+                    collections: ['users'],
+                    dryRun: false,
+                })
+            );
 
             // Use --source-project to override
             const { stdout } = await runCli([
-                '-f', configPath,
-                '--source-project', 'cli-source',
+                '-f',
+                configPath,
+                '--source-project',
+                'cli-source',
                 '--validate-only',
             ]);
 
@@ -209,15 +229,21 @@ describe('CLI', () => {
 
         test('CLI collections override config file collections', async () => {
             const configPath = path.join(TEST_DIR, 'collections-override.json');
-            fs.writeFileSync(configPath, JSON.stringify({
-                sourceProject: 'source',
-                destProject: 'dest',
-                collections: ['users', 'orders'],
-            }));
+            fs.writeFileSync(
+                configPath,
+                JSON.stringify({
+                    sourceProject: 'source',
+                    destProject: 'dest',
+                    collections: ['users', 'orders'],
+                })
+            );
 
             const { stdout } = await runCli([
-                '-f', configPath,
-                '-c', 'products', 'inventory',
+                '-f',
+                configPath,
+                '-c',
+                'products',
+                'inventory',
                 '--validate-only',
             ]);
 
@@ -229,12 +255,15 @@ describe('CLI', () => {
     describe('webhook validation', () => {
         test('fails with invalid webhook URL', async () => {
             const configPath = path.join(TEST_DIR, 'invalid-webhook.json');
-            fs.writeFileSync(configPath, JSON.stringify({
-                sourceProject: 'source',
-                destProject: 'dest',
-                collections: ['users'],
-                webhook: 'not-a-url',
-            }));
+            fs.writeFileSync(
+                configPath,
+                JSON.stringify({
+                    sourceProject: 'source',
+                    destProject: 'dest',
+                    collections: ['users'],
+                    webhook: 'not-a-url',
+                })
+            );
 
             const { exitCode, stdout } = await runCli(['-f', configPath, '-y']);
 
@@ -244,12 +273,15 @@ describe('CLI', () => {
 
         test('warns with HTTP webhook (non-localhost)', async () => {
             const configPath = path.join(TEST_DIR, 'http-webhook.json');
-            fs.writeFileSync(configPath, JSON.stringify({
-                sourceProject: 'source',
-                destProject: 'dest',
-                collections: ['users'],
-                webhook: 'http://example.com/hook',
-            }));
+            fs.writeFileSync(
+                configPath,
+                JSON.stringify({
+                    sourceProject: 'source',
+                    destProject: 'dest',
+                    collections: ['users'],
+                    webhook: 'http://example.com/hook',
+                })
+            );
 
             const { stdout } = await runCli(['-f', configPath, '--validate-only']);
 
@@ -260,7 +292,9 @@ describe('CLI', () => {
     describe('config file loading', () => {
         test('loads INI config file', async () => {
             const configPath = path.join(TEST_DIR, 'load-test.ini');
-            fs.writeFileSync(configPath, `
+            fs.writeFileSync(
+                configPath,
+                `
 [projects]
 source = ini-source
 dest = ini-dest
@@ -268,7 +302,8 @@ dest = ini-dest
 [transfer]
 collections = users,orders
 dryRun = true
-`);
+`
+            );
 
             const { stdout } = await runCli(['-f', configPath, '--validate-only']);
 
@@ -279,12 +314,15 @@ dryRun = true
 
         test('loads JSON config file', async () => {
             const configPath = path.join(TEST_DIR, 'load-test.json');
-            fs.writeFileSync(configPath, JSON.stringify({
-                sourceProject: 'json-source',
-                destProject: 'json-dest',
-                collections: ['products'],
-                dryRun: true,
-            }));
+            fs.writeFileSync(
+                configPath,
+                JSON.stringify({
+                    sourceProject: 'json-source',
+                    destProject: 'json-dest',
+                    collections: ['products'],
+                    dryRun: true,
+                })
+            );
 
             const { stdout } = await runCli(['-f', configPath, '--validate-only']);
 
@@ -304,11 +342,14 @@ dryRun = true
     describe('output modes', () => {
         test('--quiet flag is accepted', async () => {
             const configPath = path.join(TEST_DIR, 'quiet-test.json');
-            fs.writeFileSync(configPath, JSON.stringify({
-                sourceProject: 'source',
-                destProject: 'dest',
-                collections: ['users'],
-            }));
+            fs.writeFileSync(
+                configPath,
+                JSON.stringify({
+                    sourceProject: 'source',
+                    destProject: 'dest',
+                    collections: ['users'],
+                })
+            );
 
             // Just verify that -q doesn't cause parse errors
             // (actual quiet behavior tested in output.test.ts)

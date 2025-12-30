@@ -4,7 +4,10 @@ import type { Config } from '../types.js';
  * Validate a Firestore collection or document ID.
  * Returns an error message if invalid, null if valid.
  */
-export function validateFirestoreId(id: string, type: 'collection' | 'document' = 'collection'): string | null {
+export function validateFirestoreId(
+    id: string,
+    type: 'collection' | 'document' = 'collection'
+): string | null {
     // Cannot be empty
     if (!id || id.length === 0) {
         return `${type} name cannot be empty`;

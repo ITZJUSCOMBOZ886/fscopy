@@ -52,7 +52,9 @@ function serializeForHash(value: unknown): string {
     if (typeof value === 'object') {
         const obj = value as Record<string, unknown>;
         const sortedKeys = Object.keys(obj).sort((a, b) => a.localeCompare(b));
-        const pairs = sortedKeys.map((key) => `${JSON.stringify(key)}:${serializeForHash(obj[key])}`);
+        const pairs = sortedKeys.map(
+            (key) => `${JSON.stringify(key)}:${serializeForHash(obj[key])}`
+        );
         return `{${pairs.join(',')}}`;
     }
 

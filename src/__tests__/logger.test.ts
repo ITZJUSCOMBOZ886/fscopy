@@ -158,7 +158,14 @@ describe('Logger', () => {
             const logger = new Logger();
             expect(() =>
                 logger.summary(
-                    { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0, conflicts: 0, integrityErrors: 0 },
+                    {
+                        collectionsProcessed: 0,
+                        documentsTransferred: 0,
+                        documentsDeleted: 0,
+                        errors: 0,
+                        conflicts: 0,
+                        integrityErrors: 0,
+                    },
                     '0'
                 )
             ).not.toThrow();
@@ -219,7 +226,9 @@ describe('Logger', () => {
             logger.init();
 
             // Backups should shift
-            expect(fs.readFileSync(path.join(tempDir, 'test.1.log'), 'utf-8')).toBe('current'.repeat(20));
+            expect(fs.readFileSync(path.join(tempDir, 'test.1.log'), 'utf-8')).toBe(
+                'current'.repeat(20)
+            );
             expect(fs.readFileSync(path.join(tempDir, 'test.2.log'), 'utf-8')).toBe('backup1');
             expect(fs.readFileSync(path.join(tempDir, 'test.3.log'), 'utf-8')).toBe('backup2');
         });

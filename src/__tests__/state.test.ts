@@ -45,7 +45,14 @@ describe('State Management', () => {
                 startedAt: '2024-01-01T00:00:00.000Z',
                 updatedAt: '2024-01-01T00:00:00.000Z',
                 completedDocs: { users: ['doc1', 'doc2'] },
-                stats: { collectionsProcessed: 1, documentsTransferred: 2, documentsDeleted: 0, errors: 0, conflicts: 0, integrityErrors: 0 },
+                stats: {
+                    collectionsProcessed: 1,
+                    documentsTransferred: 2,
+                    documentsDeleted: 0,
+                    errors: 0,
+                    conflicts: 0,
+                    integrityErrors: 0,
+                },
             };
             fs.writeFileSync(stateFile, JSON.stringify(state));
 
@@ -64,7 +71,14 @@ describe('State Management', () => {
                 startedAt: '',
                 updatedAt: '',
                 completedDocs: {},
-                stats: { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0, conflicts: 0, integrityErrors: 0 },
+                stats: {
+                    collectionsProcessed: 0,
+                    documentsTransferred: 0,
+                    documentsDeleted: 0,
+                    errors: 0,
+                    conflicts: 0,
+                    integrityErrors: 0,
+                },
             };
             fs.writeFileSync(stateFile, JSON.stringify(state));
 
@@ -89,7 +103,14 @@ describe('State Management', () => {
                 startedAt: '2024-01-01T00:00:00.000Z',
                 updatedAt: '2024-01-01T00:00:00.000Z',
                 completedDocs: {},
-                stats: { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0, conflicts: 0, integrityErrors: 0 },
+                stats: {
+                    collectionsProcessed: 0,
+                    documentsTransferred: 0,
+                    documentsDeleted: 0,
+                    errors: 0,
+                    conflicts: 0,
+                    integrityErrors: 0,
+                },
             };
 
             saveTransferState(stateFile, state);
@@ -108,7 +129,14 @@ describe('State Management', () => {
                 startedAt: '2024-01-01T00:00:00.000Z',
                 updatedAt: '2024-01-01T00:00:00.000Z',
                 completedDocs: {},
-                stats: { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0, conflicts: 0, integrityErrors: 0 },
+                stats: {
+                    collectionsProcessed: 0,
+                    documentsTransferred: 0,
+                    documentsDeleted: 0,
+                    errors: 0,
+                    conflicts: 0,
+                    integrityErrors: 0,
+                },
             };
 
             saveTransferState(stateFile, state);
@@ -126,7 +154,14 @@ describe('State Management', () => {
                 startedAt: '',
                 updatedAt: '',
                 completedDocs: {},
-                stats: { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0, conflicts: 0, integrityErrors: 0 },
+                stats: {
+                    collectionsProcessed: 0,
+                    documentsTransferred: 0,
+                    documentsDeleted: 0,
+                    errors: 0,
+                    conflicts: 0,
+                    integrityErrors: 0,
+                },
             };
 
             saveTransferState(stateFile, state);
@@ -170,7 +205,11 @@ describe('State Management', () => {
         });
 
         test('sets timestamps', () => {
-            const config = { sourceProject: 'a', destProject: 'b', collections: [] } as unknown as Config;
+            const config = {
+                sourceProject: 'a',
+                destProject: 'b',
+                collections: [],
+            } as unknown as Config;
             const before = new Date().toISOString();
 
             const state = createInitialState(config);
@@ -196,7 +235,14 @@ describe('State Management', () => {
             startedAt: '',
             updatedAt: '',
             completedDocs: {},
-            stats: { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0, conflicts: 0, integrityErrors: 0 },
+            stats: {
+                collectionsProcessed: 0,
+                documentsTransferred: 0,
+                documentsDeleted: 0,
+                errors: 0,
+                conflicts: 0,
+                integrityErrors: 0,
+            },
         };
 
         test('returns no errors for compatible state', () => {
@@ -242,7 +288,14 @@ describe('State Management', () => {
                 startedAt: '',
                 updatedAt: '',
                 completedDocs: {},
-                stats: { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0, conflicts: 0, integrityErrors: 0 },
+                stats: {
+                    collectionsProcessed: 0,
+                    documentsTransferred: 0,
+                    documentsDeleted: 0,
+                    errors: 0,
+                    conflicts: 0,
+                    integrityErrors: 0,
+                },
             };
 
             expect(isDocCompleted(state, 'users', 'doc1')).toBe(false);
@@ -257,7 +310,14 @@ describe('State Management', () => {
                 startedAt: '',
                 updatedAt: '',
                 completedDocs: { users: ['doc1', 'doc2'] },
-                stats: { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0, conflicts: 0, integrityErrors: 0 },
+                stats: {
+                    collectionsProcessed: 0,
+                    documentsTransferred: 0,
+                    documentsDeleted: 0,
+                    errors: 0,
+                    conflicts: 0,
+                    integrityErrors: 0,
+                },
             };
 
             expect(isDocCompleted(state, 'users', 'doc3')).toBe(false);
@@ -272,7 +332,14 @@ describe('State Management', () => {
                 startedAt: '',
                 updatedAt: '',
                 completedDocs: { users: ['doc1', 'doc2'] },
-                stats: { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0, conflicts: 0, integrityErrors: 0 },
+                stats: {
+                    collectionsProcessed: 0,
+                    documentsTransferred: 0,
+                    documentsDeleted: 0,
+                    errors: 0,
+                    conflicts: 0,
+                    integrityErrors: 0,
+                },
             };
 
             expect(isDocCompleted(state, 'users', 'doc1')).toBe(true);
@@ -289,7 +356,14 @@ describe('State Management', () => {
                 startedAt: '',
                 updatedAt: '',
                 completedDocs: {},
-                stats: { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0, conflicts: 0, integrityErrors: 0 },
+                stats: {
+                    collectionsProcessed: 0,
+                    documentsTransferred: 0,
+                    documentsDeleted: 0,
+                    errors: 0,
+                    conflicts: 0,
+                    integrityErrors: 0,
+                },
             };
 
             markDocCompleted(state, 'users', 'doc1');
@@ -306,7 +380,14 @@ describe('State Management', () => {
                 startedAt: '',
                 updatedAt: '',
                 completedDocs: { users: ['doc1'] },
-                stats: { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0, conflicts: 0, integrityErrors: 0 },
+                stats: {
+                    collectionsProcessed: 0,
+                    documentsTransferred: 0,
+                    documentsDeleted: 0,
+                    errors: 0,
+                    conflicts: 0,
+                    integrityErrors: 0,
+                },
             };
 
             markDocCompleted(state, 'users', 'doc2');
@@ -324,7 +405,14 @@ describe('State Management', () => {
             startedAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             completedDocs: {},
-            stats: { collectionsProcessed: 0, documentsTransferred: 0, documentsDeleted: 0, errors: 0, conflicts: 0, integrityErrors: 0 },
+            stats: {
+                collectionsProcessed: 0,
+                documentsTransferred: 0,
+                documentsDeleted: 0,
+                errors: 0,
+                conflicts: 0,
+                integrityErrors: 0,
+            },
         });
 
         const createTestStats = (): Stats => ({
@@ -362,7 +450,10 @@ describe('State Management', () => {
 
         test('saves after time interval', async () => {
             const state = createTestState();
-            const saver = new StateSaver(stateFile, state, { batchInterval: 100, timeInterval: 50 });
+            const saver = new StateSaver(stateFile, state, {
+                batchInterval: 100,
+                timeInterval: 50,
+            });
 
             saver.markBatchCompleted('users', ['doc1'], createTestStats());
             expect(fs.existsSync(stateFile)).toBe(false);

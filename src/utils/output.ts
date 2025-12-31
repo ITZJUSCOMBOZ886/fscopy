@@ -1,6 +1,6 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import type { Stats, LogEntry } from '../types.js';
+import { rotateFileIfNeeded } from './file-rotation.js';
 
 /**
  * Parse a size string like "10MB" or "1GB" into bytes.
@@ -72,38 +72,13 @@ export class Output {
      * Creates numbered backups: log.1.ext, log.2.ext, etc.
      */
     private rotateLogIfNeeded(): void {
-        const logFile = this.options.logFile;
-        const maxSize = this.options.maxLogSize ?? 0;
-        const maxFiles = this.options.maxLogFiles ?? 5;
-
-        if (!logFile || maxSize <= 0) return;
-        if (!fs.existsSync(logFile)) return;
-
-        const stats = fs.statSync(logFile);
-        if (stats.size < maxSize) return;
-
-        const dir = path.dirname(logFile);
-        const ext = path.extname(logFile);
-        const base = path.basename(logFile, ext);
-
-        // Delete oldest backup if at max
-        const oldestPath = path.join(dir, `${base}.${maxFiles}${ext}`);
-        if (fs.existsSync(oldestPath)) {
-            fs.unlinkSync(oldestPath);
+        if (this.options.logFile) {
+            rotateFileIfNeeded(
+                this.options.logFile,
+                this.options.maxLogSize ?? 0,
+                this.options.maxLogFiles ?? 5
+            );
         }
-
-        // Shift existing backups: .4 -> .5, .3 -> .4, etc.
-        for (let i = maxFiles - 1; i >= 1; i--) {
-            const from = path.join(dir, `${base}.${i}${ext}`);
-            const to = path.join(dir, `${base}.${i + 1}${ext}`);
-            if (fs.existsSync(from)) {
-                fs.renameSync(from, to);
-            }
-        }
-
-        // Rename current to .1
-        const backupPath = path.join(dir, `${base}.1${ext}`);
-        fs.renameSync(logFile, backupPath);
     }
 
     // ==========================================================================

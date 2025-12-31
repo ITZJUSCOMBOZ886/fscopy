@@ -1,6 +1,6 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import type { Stats, LogEntry } from '../types.js';
+import { rotateFileIfNeeded } from './file-rotation.js';
 
 export interface LoggerOptions {
     logPath?: string;
@@ -69,35 +69,9 @@ export class Logger {
      * Creates numbered backups: log.1, log.2, etc.
      */
     private rotateIfNeeded(): void {
-        if (!this.logPath || this.maxSize <= 0) return;
-        if (!fs.existsSync(this.logPath)) return;
-
-        const stats = fs.statSync(this.logPath);
-        if (stats.size < this.maxSize) return;
-
-        // Rotate existing backups
-        const dir = path.dirname(this.logPath);
-        const ext = path.extname(this.logPath);
-        const base = path.basename(this.logPath, ext);
-
-        // Delete oldest if at max
-        const oldestPath = path.join(dir, `${base}.${this.maxFiles}${ext}`);
-        if (fs.existsSync(oldestPath)) {
-            fs.unlinkSync(oldestPath);
+        if (this.logPath) {
+            rotateFileIfNeeded(this.logPath, this.maxSize, this.maxFiles);
         }
-
-        // Shift existing backups: .4 -> .5, .3 -> .4, etc.
-        for (let i = this.maxFiles - 1; i >= 1; i--) {
-            const from = path.join(dir, `${base}.${i}${ext}`);
-            const to = path.join(dir, `${base}.${i + 1}${ext}`);
-            if (fs.existsSync(from)) {
-                fs.renameSync(from, to);
-            }
-        }
-
-        // Rename current to .1
-        const backupPath = path.join(dir, `${base}.1${ext}`);
-        fs.renameSync(this.logPath, backupPath);
     }
 
     summary(stats: Stats, duration: string): void {

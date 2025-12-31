@@ -31,6 +31,11 @@ async function countWithSubcollections(
     depth: number,
     progress?: CountProgress
 ): Promise<number> {
+    // Apply limit at root level only
+    if (depth === 0 && config.limit > 0) {
+        query = query.limit(config.limit);
+    }
+
     const snapshot = await query.select().get();
     let count = snapshot.size;
 
@@ -80,11 +85,17 @@ async function countSubcollectionsForDoc(
 async function countWithoutSubcollections(
     query: Query,
     collectionPath: string,
+    config: Config,
     depth: number,
     progress?: CountProgress
 ): Promise<number> {
     const countSnapshot = await query.count().get();
-    const count = countSnapshot.data().count;
+    let count = countSnapshot.data().count;
+
+    // Apply limit at root level only
+    if (depth === 0 && config.limit > 0) {
+        count = Math.min(count, config.limit);
+    }
 
     if (depth === 0 && progress?.onCollection) {
         progress.onCollection(collectionPath, count);
@@ -106,5 +117,5 @@ export async function countDocuments(
         return countWithSubcollections(sourceDb, query, collectionPath, config, depth, progress);
     }
 
-    return countWithoutSubcollections(query, collectionPath, depth, progress);
+    return countWithoutSubcollections(query, collectionPath, config, depth, progress);
 }

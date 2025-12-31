@@ -159,7 +159,8 @@ export function printSummary(
     stats: Stats,
     duration: string,
     logFile?: string,
-    dryRun?: boolean
+    dryRun?: boolean,
+    verifyIntegrity?: boolean
 ): void {
     console.log('\n' + '='.repeat(60));
     console.log('📊 TRANSFER SUMMARY');
@@ -172,8 +173,12 @@ export function printSummary(
     if (stats.conflicts > 0) {
         console.log(`Conflicts detected:    ${stats.conflicts}`);
     }
-    if (stats.integrityErrors > 0) {
-        console.log(`Integrity errors:      ${stats.integrityErrors}`);
+    if (verifyIntegrity) {
+        if (stats.integrityErrors > 0) {
+            console.log(`Integrity errors:      ${stats.integrityErrors}`);
+        } else {
+            console.log(`Integrity verified:    ✓ ${stats.documentsTransferred} documents`);
+        }
     }
     console.log(`Errors: ${stats.errors}`);
     console.log(`Duration: ${duration}s`);

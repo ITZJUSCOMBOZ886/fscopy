@@ -78,7 +78,7 @@ async function handleSuccessOutput(
     if (config.json) {
         output.json(JSON.parse(formatJsonOutput(true, config, stats, duration, undefined, verifyResult)));
     } else {
-        printSummary(stats, duration.toFixed(2), argv.log, config.dryRun);
+        printSummary(stats, duration.toFixed(2), argv.log, config.dryRun, config.verifyIntegrity);
     }
 
     if (config.webhook) {
@@ -137,11 +137,12 @@ export async function runTransfer(config: Config, argv: CliArgs, output: Output)
         }
 
         const currentStats = config.resume ? stats : createEmptyStats();
-        const { progressBar } = await setupProgressTracking(sourceDb, config, currentStats, output);
 
         if (config.clear) {
             await clearDestinationCollections(destDb, config, currentStats, output);
         }
+
+        const { progressBar } = await setupProgressTracking(sourceDb, config, currentStats, output);
 
         const rateLimiter = config.rateLimit > 0 ? new RateLimiter(config.rateLimit) : null;
         if (rateLimiter) {

@@ -6,6 +6,7 @@ process.env.METADATA_SERVER_DETECTION = 'none';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 
+import pkg from '../package.json';
 import type { Config, CliArgs } from './types.js';
 import { Output, parseSize } from './utils/output.js';
 import { ensureCredentials } from './utils/credentials.js';
@@ -24,6 +25,7 @@ import { runTransfer } from './orchestrator.js';
 
 const argv = yargs(hideBin(process.argv))
     .scriptName('fscopy')
+    .version(pkg.version)
     .usage('$0 [options]')
     .option('init', {
         type: 'string',

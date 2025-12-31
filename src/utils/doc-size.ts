@@ -1,3 +1,10 @@
+import {
+    isTimestamp,
+    isGeoPoint,
+    isDocumentReference,
+    getDocumentReferencePath,
+} from './firestore-types.js';
+
 /**
  * Firestore maximum document size in bytes (1 MiB)
  */
@@ -31,24 +38,11 @@ export function estimateDocumentSize(data: Record<string, unknown>, docPath?: st
     return size;
 }
 
-function isFirestoreTimestamp(value: object): boolean {
-    return '_seconds' in value && '_nanoseconds' in value;
-}
-
-function isGeoPoint(value: object): boolean {
-    return '_latitude' in value && '_longitude' in value;
-}
-
-function isDocumentReference(value: object): boolean {
-    return '_path' in value && typeof (value as { _path: unknown })._path === 'object';
-}
-
-function getDocRefSize(value: object): number {
-    const pathObj = (value as { _path: { segments?: string[] } })._path;
-    if (pathObj.segments) {
-        return pathObj.segments.join('/').length + 1;
+function getDocRefSize(value: unknown): number {
+    if (isDocumentReference(value)) {
+        return getDocumentReferencePath(value).length + 1;
     }
-    return 16; // Approximate
+    return 16; // Approximate for unknown reference format
 }
 
 function estimateArraySize(arr: unknown[]): number {
@@ -76,7 +70,7 @@ function estimateValueSize(value: unknown): number {
     if (value instanceof Date) return 8;
 
     if (typeof value === 'object') {
-        if (isFirestoreTimestamp(value)) return 8;
+        if (isTimestamp(value)) return 8;
         if (isGeoPoint(value)) return 16;
         if (isDocumentReference(value)) return getDocRefSize(value);
         if (Array.isArray(value)) return estimateArraySize(value);

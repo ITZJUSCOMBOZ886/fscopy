@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isTimestamp, isGeoPoint, isDocumentReference } from './firestore-types.js';
 
 /**
  * Compute a SHA-256 hash of document data.
@@ -28,17 +29,17 @@ function serializeForHash(value: unknown): string {
     }
 
     // Handle Firestore Timestamp
-    if (isFirestoreTimestamp(value)) {
+    if (isTimestamp(value)) {
         return JSON.stringify({ _seconds: value.seconds, _nanoseconds: value.nanoseconds });
     }
 
     // Handle Firestore GeoPoint
-    if (isFirestoreGeoPoint(value)) {
+    if (isGeoPoint(value)) {
         return JSON.stringify({ _latitude: value.latitude, _longitude: value.longitude });
     }
 
     // Handle Firestore DocumentReference
-    if (isFirestoreDocumentReference(value)) {
+    if (isDocumentReference(value)) {
         return JSON.stringify({ _path: value.path });
     }
 
@@ -67,56 +68,4 @@ function serializeForHash(value: unknown): string {
  */
 export function compareHashes(sourceHash: string, destHash: string): boolean {
     return sourceHash === destHash;
-}
-
-// Type guards for Firestore types
-
-interface FirestoreTimestamp {
-    seconds: number;
-    nanoseconds: number;
-    toDate?: () => Date;
-}
-
-interface FirestoreGeoPoint {
-    latitude: number;
-    longitude: number;
-}
-
-interface FirestoreDocumentReference {
-    path: string;
-    id: string;
-}
-
-function isFirestoreTimestamp(value: unknown): value is FirestoreTimestamp {
-    return (
-        typeof value === 'object' &&
-        value !== null &&
-        'seconds' in value &&
-        'nanoseconds' in value &&
-        typeof (value as FirestoreTimestamp).seconds === 'number' &&
-        typeof (value as FirestoreTimestamp).nanoseconds === 'number'
-    );
-}
-
-function isFirestoreGeoPoint(value: unknown): value is FirestoreGeoPoint {
-    return (
-        typeof value === 'object' &&
-        value !== null &&
-        'latitude' in value &&
-        'longitude' in value &&
-        typeof (value as FirestoreGeoPoint).latitude === 'number' &&
-        typeof (value as FirestoreGeoPoint).longitude === 'number' &&
-        !('seconds' in value)
-    );
-}
-
-function isFirestoreDocumentReference(value: unknown): value is FirestoreDocumentReference {
-    return (
-        typeof value === 'object' &&
-        value !== null &&
-        'path' in value &&
-        'id' in value &&
-        typeof (value as FirestoreDocumentReference).path === 'string' &&
-        typeof (value as FirestoreDocumentReference).id === 'string'
-    );
 }

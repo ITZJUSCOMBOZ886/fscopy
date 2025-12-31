@@ -17,13 +17,18 @@ const DEFAULT_OPTIONS: ProgressBarOptions = {
 
 /**
  * Wrapper around cli-progress that handles speed calculation and cleanup.
- * Eliminates the need for type hacks to store the speed interval.
+ * Thread-safe for parallel mode: uses batched updates to prevent UI flickering.
  */
 export class ProgressBarWrapper {
     private bar: cliProgress.SingleBar | null = null;
     private speedInterval: NodeJS.Timeout | null = null;
+    private flushInterval: NodeJS.Timeout | null = null;
     private lastDocsTransferred = 0;
     private lastTime = Date.now();
+
+    // Batched increment counter for parallel-safe updates
+    private pendingIncrements = 0;
+    private readonly flushIntervalMs = 50; // Flush batched updates every 50ms
 
     constructor(private readonly options: ProgressBarOptions = {}) {}
 
@@ -45,19 +50,48 @@ export class ProgressBarWrapper {
         this.bar.start(total, 0, { speed: '0' });
         this.lastDocsTransferred = 0;
         this.lastTime = Date.now();
+        this.pendingIncrements = 0;
 
+        // Speed update interval
         this.speedInterval = setInterval(() => {
             this.updateSpeed(stats);
         }, 500);
+
+        // Batched increment flush interval (for parallel mode)
+        this.flushInterval = setInterval(() => {
+            this.flushIncrements();
+        }, this.flushIntervalMs);
     }
 
     /**
      * Increment the progress bar by 1.
+     * Thread-safe: increments are batched and flushed periodically.
      */
     increment(): void {
         if (this.bar) {
-            this.bar.increment();
+            this.pendingIncrements++;
         }
+    }
+
+    /**
+     * Increment the progress bar by a specific amount.
+     * Thread-safe: increments are batched and flushed periodically.
+     */
+    incrementBy(count: number): void {
+        if (this.bar && count > 0) {
+            this.pendingIncrements += count;
+        }
+    }
+
+    /**
+     * Flush pending increments to the progress bar.
+     */
+    private flushIncrements(): void {
+        if (!this.bar || this.pendingIncrements === 0) return;
+
+        const toFlush = this.pendingIncrements;
+        this.pendingIncrements = 0;
+        this.bar.increment(toFlush);
     }
 
     /**
@@ -80,9 +114,17 @@ export class ProgressBarWrapper {
     }
 
     /**
-     * Stop the progress bar and clean up the speed interval.
+     * Stop the progress bar and clean up intervals.
+     * Flushes any pending increments before stopping.
      */
     stop(): void {
+        // Flush remaining increments
+        this.flushIncrements();
+
+        if (this.flushInterval) {
+            clearInterval(this.flushInterval);
+            this.flushInterval = null;
+        }
         if (this.speedInterval) {
             clearInterval(this.speedInterval);
             this.speedInterval = null;

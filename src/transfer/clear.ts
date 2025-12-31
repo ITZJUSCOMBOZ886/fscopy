@@ -145,29 +145,6 @@ async function deleteOrphanBatch(
     return deletedCount;
 }
 
-async function processSubcollectionOrphans(
-    sourceDb: Firestore,
-    destDb: Firestore,
-    sourceSnapshot: FirebaseFirestore.QuerySnapshot,
-    sourceCollectionPath: string,
-    config: Config,
-    output: Output
-): Promise<number> {
-    let deletedCount = 0;
-
-    for (const sourceDoc of sourceSnapshot.docs) {
-        const sourceSubcollections = await getSubcollections(sourceDoc.ref);
-        for (const subId of sourceSubcollections) {
-            if (matchesExcludePattern(subId, config.exclude)) continue;
-
-            const subPath = `${sourceCollectionPath}/${sourceDoc.id}/${subId}`;
-            deletedCount += await deleteOrphanDocuments(sourceDb, destDb, subPath, config, output);
-        }
-    }
-
-    return deletedCount;
-}
-
 async function processSubcollectionOrphansWithProgress(
     sourceDb: Firestore,
     destDb: Firestore,
@@ -186,7 +163,14 @@ async function processSubcollectionOrphansWithProgress(
 
             const subPath = `${sourceCollectionPath}/${sourceDoc.id}/${subId}`;
             progress?.onSubcollectionScan?.(subPath);
-            deletedCount += await deleteOrphanDocuments(sourceDb, destDb, subPath, config, output, progress);
+            deletedCount += await deleteOrphanDocuments(
+                sourceDb,
+                destDb,
+                subPath,
+                config,
+                output,
+                progress
+            );
         }
     }
 

@@ -233,11 +233,7 @@ describe('clear module', () => {
 
     describe('deleteBatch', () => {
         test('adds all documents to write batch', () => {
-            const docs = [
-                createMockDoc('doc1'),
-                createMockDoc('doc2'),
-                createMockDoc('doc3'),
-            ];
+            const docs = [createMockDoc('doc1'), createMockDoc('doc2'), createMockDoc('doc3')];
             const mockBatch: MockWriteBatch = {
                 delete: mock(() => {}),
                 commit: mock(() => Promise.resolve()),
@@ -294,10 +290,7 @@ describe('clear module', () => {
 
         test('returns 0 when no orphans', () => {
             const sourceIds = new Set(['doc1', 'doc2', 'doc3']);
-            const destDocs = [
-                createMockDoc('doc1'),
-                createMockDoc('doc2'),
-            ];
+            const destDocs = [createMockDoc('doc1'), createMockDoc('doc2')];
 
             const orphanDocs = destDocs.filter((doc) => !sourceIds.has(doc.id));
 
@@ -307,11 +300,7 @@ describe('clear module', () => {
         test('all dest docs are orphans when source is empty', () => {
             // When source has no documents, all destination docs are orphans
             const sourceIds = new Set<string>();
-            const destDocs = [
-                createMockDoc('doc1'),
-                createMockDoc('doc2'),
-                createMockDoc('doc3'),
-            ];
+            const destDocs = [createMockDoc('doc1'), createMockDoc('doc2'), createMockDoc('doc3')];
 
             // With empty source, orphan count equals dest count
             expect(sourceIds.size).toBe(0);
@@ -336,9 +325,7 @@ describe('clear module', () => {
         });
 
         test('batches orphan deletions', () => {
-            const orphanDocs = Array.from({ length: 750 }, (_, i) =>
-                createMockDoc(`orphan${i}`)
-            );
+            const orphanDocs = Array.from({ length: 750 }, (_, i) => createMockDoc(`orphan${i}`));
             const config = createMockConfig({ batchSize: 500 });
             const batches: MockDocumentSnapshot[][] = [];
 
@@ -495,10 +482,10 @@ describe('clear module', () => {
                 delay,
             });
 
-            expect(output.logError).toHaveBeenCalledWith(
-                'Retry delete 2/3 for users',
-                { error: 'Network error', delay: 2000 }
-            );
+            expect(output.logError).toHaveBeenCalledWith('Retry delete 2/3 for users', {
+                error: 'Network error',
+                delay: 2000,
+            });
         });
     });
 });

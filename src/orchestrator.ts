@@ -1,6 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore';
 
-import type { Config, Stats, TransferState, TransformFunction, CliArgs, ConflictInfo } from './types.js';
+import type { Config, ValidatedConfig, Stats, TransferState, TransformFunction, CliArgs, ConflictInfo } from './types.js';
 import { Output } from './utils/output.js';
 import { RateLimiter } from './utils/rate-limiter.js';
 import { ProgressBarWrapper } from './utils/progress.js';
@@ -24,7 +24,7 @@ interface ResumeResult {
     stats: Stats;
 }
 
-function initializeResumeMode(config: Config, output: Output): ResumeResult {
+function initializeResumeMode(config: ValidatedConfig, output: Output): ResumeResult {
     if (config.resume) {
         const existingState = loadTransferState(config.stateFile);
         if (!existingState) {
@@ -68,7 +68,7 @@ async function loadTransform(config: Config, output: Output): Promise<TransformF
 }
 
 async function handleSuccessOutput(
-    config: Config,
+    config: ValidatedConfig,
     argv: CliArgs,
     stats: Stats,
     duration: number,
@@ -83,8 +83,8 @@ async function handleSuccessOutput(
 
     if (config.webhook) {
         await sendWebhook(config.webhook, {
-            source: config.sourceProject!,
-            destination: config.destProject!,
+            source: config.sourceProject,
+            destination: config.destProject,
             collections: config.collections,
             stats,
             duration,
@@ -95,7 +95,7 @@ async function handleSuccessOutput(
 }
 
 async function handleErrorOutput(
-    config: Config,
+    config: ValidatedConfig,
     stats: Stats,
     duration: number,
     errorMessage: string,
@@ -109,8 +109,8 @@ async function handleErrorOutput(
 
     if (config.webhook) {
         await sendWebhook(config.webhook, {
-            source: config.sourceProject ?? 'unknown',
-            destination: config.destProject ?? 'unknown',
+            source: config.sourceProject,
+            destination: config.destProject,
             collections: config.collections,
             stats,
             duration,
@@ -121,7 +121,7 @@ async function handleErrorOutput(
     }
 }
 
-export async function runTransfer(config: Config, argv: CliArgs, output: Output): Promise<TransferResult> {
+export async function runTransfer(config: ValidatedConfig, argv: CliArgs, output: Output): Promise<TransferResult> {
     const startTime = Date.now();
 
     try {

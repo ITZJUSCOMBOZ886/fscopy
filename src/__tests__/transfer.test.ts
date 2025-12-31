@@ -37,12 +37,9 @@ function createMockDoc(
         id,
         exists: options.exists ?? true,
         data: () => data,
-        updateTime: options.updateTime
-            ? { toDate: () => options.updateTime! }
-            : undefined,
+        updateTime: options.updateTime ? { toDate: () => options.updateTime! } : undefined,
         ref: {
-            listCollections: async () =>
-                (options.subcollections ?? []).map((id) => ({ id })),
+            listCollections: async () => (options.subcollections ?? []).map((id) => ({ id })),
         },
     };
 }
@@ -500,7 +497,9 @@ describe('transfer module', () => {
             const config = createMockConfig({ merge: true });
             const setCalls: unknown[][] = [];
             const mockBatch = {
-                set: (...args: unknown[]) => { setCalls.push(args); },
+                set: (...args: unknown[]) => {
+                    setCalls.push(args);
+                },
             };
 
             const destDocRef = { id: 'doc1' };
@@ -519,7 +518,9 @@ describe('transfer module', () => {
             const config = createMockConfig({ merge: false });
             const setCalls: unknown[][] = [];
             const mockBatch = {
-                set: (...args: unknown[]) => { setCalls.push(args); },
+                set: (...args: unknown[]) => {
+                    setCalls.push(args);
+                },
             };
 
             const destDocRef = { id: 'doc1' };
@@ -576,7 +577,10 @@ describe('transfer module', () => {
         test('acquires rate limit tokens before batch commit', async () => {
             const acquireCalls: number[] = [];
             const mockRateLimiter = {
-                acquire: (count: number) => { acquireCalls.push(count); return Promise.resolve(); },
+                acquire: (count: number) => {
+                    acquireCalls.push(count);
+                    return Promise.resolve();
+                },
             };
 
             await mockRateLimiter.acquire(100);

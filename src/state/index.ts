@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import type { Config, TransferState, Stats } from '../types.js';
+import type { Config, ValidatedConfig, TransferState, Stats } from '../types.js';
 
 export const STATE_VERSION = 1;
 
@@ -244,11 +244,11 @@ export function deleteTransferState(stateFile: string): void {
     }
 }
 
-export function createInitialState(config: Config): TransferState {
+export function createInitialState(config: ValidatedConfig): TransferState {
     return {
         version: STATE_VERSION,
-        sourceProject: config.sourceProject!,
-        destProject: config.destProject!,
+        sourceProject: config.sourceProject,
+        destProject: config.destProject,
         collections: config.collections,
         startedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),

@@ -11,5 +11,5 @@ export {
     loadConfigFile,
     mergeConfig,
 } from './parser.js';
-export { validateConfig } from './validator.js';
+export { validateConfig, isValidatedConfig, assertValidConfig } from './validator.js';
 export { generateConfigFile } from './generator.js';

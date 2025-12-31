@@ -40,6 +40,12 @@ export interface Config {
     verifyIntegrity: boolean;
 }
 
+// Config after validation - required fields are guaranteed non-null
+export interface ValidatedConfig extends Omit<Config, 'sourceProject' | 'destProject'> {
+    sourceProject: string;
+    destProject: string;
+}
+
 export interface ConflictInfo {
     collection: string;
     docId: string;

@@ -14,7 +14,7 @@ import {
     StateSaver,
     CompletedDocsCache,
 } from '../state/index.js';
-import type { Config, TransferState, Stats } from '../types.js';
+import type { Config, ValidatedConfig, TransferState, Stats } from '../types.js';
 
 describe('State Management', () => {
     let tempDir: string;
@@ -191,7 +191,7 @@ describe('State Management', () => {
                 sourceProject: 'source-proj',
                 destProject: 'dest-proj',
                 collections: ['users', 'orders'],
-            } as Config;
+            } as ValidatedConfig;
 
             const state = createInitialState(config);
 
@@ -209,7 +209,7 @@ describe('State Management', () => {
                 sourceProject: 'a',
                 destProject: 'b',
                 collections: [],
-            } as unknown as Config;
+            } as unknown as ValidatedConfig;
             const before = new Date().toISOString();
 
             const state = createInitialState(config);

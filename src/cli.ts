@@ -7,11 +7,11 @@ import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 
 import pkg from '../package.json';
-import type { Config, CliArgs } from './types.js';
+import type { Config, CliArgs, ValidatedConfig } from './types.js';
 import { Output, parseSize } from './utils/output.js';
 import { ensureCredentials } from './utils/credentials.js';
 import { loadConfigFile, mergeConfig } from './config/parser.js';
-import { validateConfig } from './config/validator.js';
+import { validateConfig, isValidatedConfig } from './config/validator.js';
 import { defaults } from './config/defaults.js';
 import { generateConfigFile } from './config/generator.js';
 import { validateWebhookUrl } from './webhook/index.js';
@@ -267,9 +267,16 @@ async function main(): Promise<void> {
         process.exit(1);
     }
 
+    // After validation, config is guaranteed to have required fields
+    if (!isValidatedConfig(config)) {
+        console.log('\n❌ Configuration validation failed');
+        process.exit(1);
+    }
+    const validConfig: ValidatedConfig = config;
+
     // Validate webhook URL if configured
-    if (config.webhook) {
-        const webhookValidation = validateWebhookUrl(config.webhook);
+    if (validConfig.webhook) {
+        const webhookValidation = validateWebhookUrl(validConfig.webhook);
         if (!webhookValidation.valid) {
             console.log(`\n❌ ${webhookValidation.warning}`);
             process.exit(1);
@@ -287,7 +294,7 @@ async function main(): Promise<void> {
 
     // Skip confirmation in interactive mode (already confirmed by selection)
     if (!argv.yes && !argv.interactive) {
-        const confirmed = await askConfirmation(config);
+        const confirmed = await askConfirmation(validConfig);
         if (!confirmed) {
             console.log('\n🚫 Transfer cancelled by user\n');
             process.exit(0);
@@ -302,10 +309,10 @@ async function main(): Promise<void> {
         maxLogSize: parseSize(argv.maxLogSize),
     });
     output.init();
-    output.logInfo('Transfer started', { config: config as unknown as Record<string, unknown> });
+    output.logInfo('Transfer started', { config: validConfig as unknown as Record<string, unknown> });
 
     // Run transfer
-    const result = await runTransfer(config, argv, output);
+    const result = await runTransfer(validConfig, argv, output);
 
     if (!result.success) {
         process.exit(1);

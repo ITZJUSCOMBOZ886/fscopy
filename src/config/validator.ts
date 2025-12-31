@@ -1,4 +1,4 @@
-import type { Config } from '../types.js';
+import type { Config, ValidatedConfig } from '../types.js';
 
 /**
  * Validate a Firestore collection or document ID.
@@ -78,4 +78,30 @@ export function validateConfig(config: Config): string[] {
     }
 
     return errors;
+}
+
+/**
+ * Type guard to check if a Config has been validated.
+ * Returns true if sourceProject and destProject are non-null strings.
+ */
+export function isValidatedConfig(config: Config): config is ValidatedConfig {
+    return (
+        typeof config.sourceProject === 'string' &&
+        typeof config.destProject === 'string' &&
+        config.collections.length > 0
+    );
+}
+
+/**
+ * Validates config and returns ValidatedConfig if valid, throws otherwise.
+ */
+export function assertValidConfig(config: Config): ValidatedConfig {
+    const errors = validateConfig(config);
+    if (errors.length > 0) {
+        throw new Error(`Invalid configuration: ${errors.join(', ')}`);
+    }
+    if (!isValidatedConfig(config)) {
+        throw new Error('Configuration validation failed');
+    }
+    return config;
 }

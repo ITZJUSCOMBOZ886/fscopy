@@ -6,7 +6,6 @@ interface MockDocumentSnapshot {
     ref: { listCollections: () => Promise<{ id: string }[]> };
 }
 
-
 // Helper to create mock document
 function createMockDoc(id: string, subcollections: string[] = []): MockDocumentSnapshot {
     return {
@@ -162,7 +161,9 @@ describe('count module', () => {
 
         test('calls onCollection progress callback at depth 0', () => {
             const calls: Array<{ path: string; count: number }> = [];
-            const onCollection = (p: string, c: number) => { calls.push({ path: p, count: c }); };
+            const onCollection = (p: string, c: number) => {
+                calls.push({ path: p, count: c });
+            };
             const depth = 0;
             const collectionPath = 'users';
             const count = 100;
@@ -178,22 +179,14 @@ describe('count module', () => {
 
     describe('countWithSubcollections', () => {
         test('counts documents in main collection', () => {
-            const docs = [
-                createMockDoc('doc1'),
-                createMockDoc('doc2'),
-                createMockDoc('doc3'),
-            ];
+            const docs = [createMockDoc('doc1'), createMockDoc('doc2'), createMockDoc('doc3')];
 
             expect(docs.length).toBe(3);
         });
 
         test('applies limit at root level', () => {
             const config = createMockConfig({ limit: 2 });
-            const docs = [
-                createMockDoc('doc1'),
-                createMockDoc('doc2'),
-                createMockDoc('doc3'),
-            ];
+            const docs = [createMockDoc('doc1'), createMockDoc('doc2'), createMockDoc('doc3')];
             const depth = 0;
 
             let docsToProcess = docs;
@@ -281,7 +274,7 @@ describe('count module', () => {
             // Total: 3 + 2 + 5 + 1 = 11
 
             const counts = {
-                'users': 3,
+                users: 3,
                 'users/doc1/orders': 2,
                 'users/doc1/orders/order1/items': 5,
                 'users/doc2/orders': 1,

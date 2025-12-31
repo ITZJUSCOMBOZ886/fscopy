@@ -168,20 +168,57 @@ async function processSubcollectionOrphans(
     return deletedCount;
 }
 
+async function processSubcollectionOrphansWithProgress(
+    sourceDb: Firestore,
+    destDb: Firestore,
+    sourceSnapshot: FirebaseFirestore.QuerySnapshot,
+    sourceCollectionPath: string,
+    config: Config,
+    output: Output,
+    progress?: DeleteOrphansProgress
+): Promise<number> {
+    let deletedCount = 0;
+
+    for (const sourceDoc of sourceSnapshot.docs) {
+        const sourceSubcollections = await getSubcollections(sourceDoc.ref);
+        for (const subId of sourceSubcollections) {
+            if (matchesExcludePattern(subId, config.exclude)) continue;
+
+            const subPath = `${sourceCollectionPath}/${sourceDoc.id}/${subId}`;
+            progress?.onSubcollectionScan?.(subPath);
+            deletedCount += await deleteOrphanDocuments(sourceDb, destDb, subPath, config, output, progress);
+        }
+    }
+
+    return deletedCount;
+}
+
+export interface DeleteOrphansProgress {
+    onScanStart?: (collection: string) => void;
+    onScanComplete?: (collection: string, orphanCount: number, totalDest: number) => void;
+    onBatchDeleted?: (collection: string, deletedSoFar: number, total: number) => void;
+    onSubcollectionScan?: (path: string) => void;
+}
+
 export async function deleteOrphanDocuments(
     sourceDb: Firestore,
     destDb: Firestore,
     sourceCollectionPath: string,
     config: Config,
-    output: Output
+    output: Output,
+    progress?: DeleteOrphansProgress
 ): Promise<number> {
     const destCollectionPath = getDestCollectionPath(sourceCollectionPath, config.renameCollection);
+
+    progress?.onScanStart?.(destCollectionPath);
 
     const sourceSnapshot = await sourceDb.collection(sourceCollectionPath).select().get();
     const sourceIds = new Set(sourceSnapshot.docs.map((doc) => doc.id));
 
     const destSnapshot = await destDb.collection(destCollectionPath).select().get();
     const orphanDocs = destSnapshot.docs.filter((doc) => !sourceIds.has(doc.id));
+
+    progress?.onScanComplete?.(destCollectionPath, orphanDocs.length, destSnapshot.size);
 
     let deletedCount = 0;
 
@@ -197,17 +234,19 @@ export async function deleteOrphanDocuments(
                 config,
                 output
             );
+            progress?.onBatchDeleted?.(destCollectionPath, deletedCount, orphanDocs.length);
         }
     }
 
     if (config.includeSubcollections) {
-        deletedCount += await processSubcollectionOrphans(
+        deletedCount += await processSubcollectionOrphansWithProgress(
             sourceDb,
             destDb,
             sourceSnapshot,
             sourceCollectionPath,
             config,
-            output
+            output,
+            progress
         );
     }
 

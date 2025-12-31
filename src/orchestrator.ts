@@ -6,7 +6,7 @@ import { RateLimiter } from './utils/rate-limiter.js';
 import { ProgressBarWrapper } from './utils/progress.js';
 import { loadTransferState, saveTransferState, createInitialState, validateStateForResume, deleteTransferState, StateSaver } from './state/index.js';
 import { sendWebhook } from './webhook/index.js';
-import { countDocuments, transferCollection, clearCollection, deleteOrphanDocuments, processInParallel, getDestCollectionPath, type TransferContext, type CountProgress } from './transfer/index.js';
+import { countDocuments, transferCollection, clearCollection, deleteOrphanDocuments, processInParallel, getDestCollectionPath, type TransferContext, type CountProgress, type DeleteOrphansProgress } from './transfer/index.js';
 import { initializeFirebase, checkDatabaseConnectivity, cleanupFirebase } from './firebase/index.js';
 import { loadTransformFunction } from './transform/loader.js';
 import { printSummary, formatJsonOutput } from './output/display.js';
@@ -350,16 +350,49 @@ async function deleteOrphanDocs(
     output: Output
 ): Promise<void> {
     output.info('\n🔄 Deleting orphan documents (sync mode)...');
+
+    let lastProgressLog = Date.now();
+    let subcollectionCount = 0;
+
+    const progress: DeleteOrphansProgress = {
+        onScanStart: (collection) => {
+            process.stdout.write(`   Scanning ${collection}...`);
+        },
+        onScanComplete: (collection, orphanCount, totalDest) => {
+            process.stdout.write(`\r   ${collection}: ${orphanCount}/${totalDest} orphan docs\n`);
+        },
+        onBatchDeleted: (collection, deletedSoFar, total) => {
+            process.stdout.write(`\r   Deleting from ${collection}... ${deletedSoFar}/${total}`);
+            if (deletedSoFar === total) {
+                process.stdout.write('\n');
+            }
+        },
+        onSubcollectionScan: (_path) => {
+            subcollectionCount++;
+            const now = Date.now();
+            if (now - lastProgressLog > 2000) {
+                process.stdout.write(`\r   Scanning subcollections... (${subcollectionCount} checked)`);
+                lastProgressLog = now;
+            }
+        },
+    };
+
     for (const collection of config.collections) {
         const deleted = await deleteOrphanDocuments(
             sourceDb,
             destDb,
             collection,
             config,
-            output
+            output,
+            progress
         );
         stats.documentsDeleted += deleted;
     }
+
+    if (subcollectionCount > 0) {
+        process.stdout.write('\r' + ' '.repeat(60) + '\r');
+    }
+
     if (stats.documentsDeleted > 0) {
         output.info(`   Deleted ${stats.documentsDeleted} orphan documents`);
     } else {

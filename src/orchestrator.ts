@@ -1,5 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore';
 
+import { PROGRESS_LOG_INTERVAL_MS, SEPARATOR_LENGTH } from './constants.js';
 import type { Config, ValidatedConfig, Stats, TransferState, TransformFunction, CliArgs, ConflictInfo } from './types.js';
 import { Output } from './utils/output.js';
 import { RateLimiter } from './utils/rate-limiter.js';
@@ -121,6 +122,29 @@ async function handleErrorOutput(
     }
 }
 
+function displayTransferOptions(config: Config, rateLimiter: RateLimiter | null, output: Output): void {
+    let hasOptions = false;
+
+    if (rateLimiter) {
+        output.info(`⏱️  Rate limiting enabled: ${config.rateLimit} docs/s`);
+        hasOptions = true;
+    }
+
+    if (config.detectConflicts) {
+        output.info('🔒 Conflict detection enabled: Conflicts will be logged but won\'t stop the transfer');
+        hasOptions = true;
+    }
+
+    if (config.maxDepth > 0 && config.includeSubcollections) {
+        output.info(`📊 Max depth: ${config.maxDepth} - Subcollections beyond this level will be skipped`);
+        hasOptions = true;
+    }
+
+    if (hasOptions) {
+        output.blank();
+    }
+}
+
 export async function runTransfer(config: ValidatedConfig, argv: CliArgs, output: Output): Promise<TransferResult> {
     const startTime = Date.now();
 
@@ -145,9 +169,7 @@ export async function runTransfer(config: ValidatedConfig, argv: CliArgs, output
         const { progressBar } = await setupProgressTracking(sourceDb, config, currentStats, output);
 
         const rateLimiter = config.rateLimit > 0 ? new RateLimiter(config.rateLimit) : null;
-        if (rateLimiter) {
-            output.info(`⏱️  Rate limiting enabled: ${config.rateLimit} docs/s\n`);
-        }
+        displayTransferOptions(config, rateLimiter, output);
 
         const stateSaver = transferState ? new StateSaver(config.stateFile, transferState) : null;
 
@@ -264,7 +286,7 @@ async function setupProgressTracking(
             onSubcollection: (_path) => {
                 subcollectionCount++;
                 const now = Date.now();
-                if (now - lastSubcollectionLog > 2000) {
+                if (now - lastSubcollectionLog > PROGRESS_LOG_INTERVAL_MS) {
                     process.stdout.write(`\r   Scanning subcollections... (${subcollectionCount} found)`);
                     lastSubcollectionLog = now;
                 }
@@ -276,7 +298,7 @@ async function setupProgressTracking(
         }
 
         if (subcollectionCount > 0) {
-            process.stdout.write('\r' + ' '.repeat(60) + '\r');
+            process.stdout.write('\r' + ' '.repeat(SEPARATOR_LENGTH) + '\r');
             output.info(`   Subcollections scanned: ${subcollectionCount}`);
         }
         output.info(`   Total: ${totalDocs} documents to transfer\n`);
@@ -370,7 +392,7 @@ async function deleteOrphanDocs(
         onSubcollectionScan: (_path) => {
             subcollectionCount++;
             const now = Date.now();
-            if (now - lastProgressLog > 2000) {
+            if (now - lastProgressLog > PROGRESS_LOG_INTERVAL_MS) {
                 process.stdout.write(`\r   Scanning subcollections... (${subcollectionCount} checked)`);
                 lastProgressLog = now;
             }
@@ -390,7 +412,7 @@ async function deleteOrphanDocs(
     }
 
     if (subcollectionCount > 0) {
-        process.stdout.write('\r' + ' '.repeat(60) + '\r');
+        process.stdout.write('\r' + ' '.repeat(SEPARATOR_LENGTH) + '\r');
     }
 
     if (stats.documentsDeleted > 0) {

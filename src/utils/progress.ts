@@ -1,4 +1,5 @@
 import cliProgress from 'cli-progress';
+import { SPEED_UPDATE_INTERVAL_MS, PROGRESS_FLUSH_INTERVAL_MS } from '../constants.js';
 import type { Stats } from '../types.js';
 
 export interface ProgressBarOptions {
@@ -28,7 +29,6 @@ export class ProgressBarWrapper {
 
     // Batched increment counter for parallel-safe updates
     private pendingIncrements = 0;
-    private readonly flushIntervalMs = 50; // Flush batched updates every 50ms
 
     constructor(private readonly options: ProgressBarOptions = {}) {}
 
@@ -55,12 +55,12 @@ export class ProgressBarWrapper {
         // Speed update interval
         this.speedInterval = setInterval(() => {
             this.updateSpeed(stats);
-        }, 500);
+        }, SPEED_UPDATE_INTERVAL_MS);
 
         // Batched increment flush interval (for parallel mode)
         this.flushInterval = setInterval(() => {
             this.flushIncrements();
-        }, this.flushIntervalMs);
+        }, PROGRESS_FLUSH_INTERVAL_MS);
     }
 
     /**

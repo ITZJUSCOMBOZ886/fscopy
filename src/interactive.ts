@@ -1,6 +1,7 @@
 import admin from 'firebase-admin';
 import type { Firestore } from 'firebase-admin/firestore';
 import { input, checkbox, confirm } from '@inquirer/prompts';
+import { SEPARATOR_LENGTH } from './constants.js';
 import type { Config } from './types.js';
 
 async function promptForProject(
@@ -59,9 +60,9 @@ async function promptForIdModification(
 }
 
 export async function runInteractiveMode(config: Config): Promise<Config> {
-    console.log('\n' + '='.repeat(60));
+    console.log('\n' + '='.repeat(SEPARATOR_LENGTH));
     console.log('🔄 FSCOPY - INTERACTIVE MODE');
-    console.log('='.repeat(60) + '\n');
+    console.log('='.repeat(SEPARATOR_LENGTH) + '\n');
 
     const sourceProject = await promptForProject(config.sourceProject, 'Source Firebase project ID', '📤');
     const destProject = await promptForProject(config.destProject, 'Destination Firebase project ID', '📥');

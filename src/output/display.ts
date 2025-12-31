@@ -1,4 +1,5 @@
 import readline from 'node:readline';
+import { SEPARATOR_LENGTH } from '../constants.js';
 import type { Config, Stats } from '../types.js';
 
 function formatIdModification(config: Config): string | null {
@@ -113,9 +114,9 @@ function displayAdditionalOptions(config: Config): void {
 }
 
 export function displayConfig(config: Config): void {
-    console.log('='.repeat(60));
+    console.log('='.repeat(SEPARATOR_LENGTH));
     console.log('🔄 FSCOPY - CONFIGURATION');
-    console.log('='.repeat(60));
+    console.log('='.repeat(SEPARATOR_LENGTH));
     console.log('');
     console.log(`  📤 Source project:       ${config.sourceProject || '(not set)'}`);
     console.log(`  📥 Destination project:  ${config.destProject || '(not set)'}`);
@@ -137,7 +138,7 @@ export function displayConfig(config: Config): void {
             : '  ⚡ Mode:                 LIVE (data WILL be transferred)'
     );
     console.log('');
-    console.log('='.repeat(60));
+    console.log('='.repeat(SEPARATOR_LENGTH));
 }
 
 export async function askConfirmation(config: Config): Promise<boolean> {
@@ -162,9 +163,9 @@ export function printSummary(
     dryRun?: boolean,
     verifyIntegrity?: boolean
 ): void {
-    console.log('\n' + '='.repeat(60));
+    console.log('\n' + '='.repeat(SEPARATOR_LENGTH));
     console.log('📊 TRANSFER SUMMARY');
-    console.log('='.repeat(60));
+    console.log('='.repeat(SEPARATOR_LENGTH));
     console.log(`Collections processed: ${stats.collectionsProcessed}`);
     if (stats.documentsDeleted > 0) {
         console.log(`Documents deleted:     ${stats.documentsDeleted}`);
@@ -193,7 +194,7 @@ export function printSummary(
     } else {
         console.log('\n✓ Transfer completed successfully');
     }
-    console.log('='.repeat(60) + '\n');
+    console.log('='.repeat(SEPARATOR_LENGTH) + '\n');
 }
 
 export function formatJsonOutput(

@@ -125,22 +125,62 @@ export async function sendWebhook(
     }
 
     try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000);
+
         const response = await fetch(webhookUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
+            signal: controller.signal,
         });
+
+        clearTimeout(timeout);
 
         if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(`HTTP ${response.status}: ${errorText}`);
+            const statusCode = response.status;
+
+            if (statusCode >= 400 && statusCode < 500) {
+                // Client error - likely bad URL or payload format
+                output.logError(`Webhook client error (${statusCode})`, {
+                    url: webhookUrl,
+                    status: statusCode,
+                    error: errorText,
+                });
+                output.warn(
+                    `⚠️  Webhook failed (HTTP ${statusCode}): Check webhook URL or payload format`
+                );
+            } else if (statusCode >= 500) {
+                // Server error - retry might help
+                output.logError(`Webhook server error (${statusCode})`, {
+                    url: webhookUrl,
+                    status: statusCode,
+                    error: errorText,
+                });
+                output.warn(
+                    `⚠️  Webhook server error (HTTP ${statusCode}): The webhook service may be temporarily unavailable`
+                );
+            }
+            return;
         }
 
         output.logInfo(`Webhook sent successfully (${webhookType})`, { url: webhookUrl });
         output.info(`📤 Webhook notification sent (${webhookType})`);
     } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        output.logError(`Failed to send webhook: ${message}`, { url: webhookUrl });
-        output.warn(`⚠️  Failed to send webhook: ${message}`);
+        const err = error as Error;
+
+        if (err.name === 'AbortError') {
+            output.logError('Webhook timeout after 30s', { url: webhookUrl });
+            output.warn('⚠️  Webhook request timed out after 30 seconds');
+        } else if (err.message.includes('ECONNREFUSED') || err.message.includes('ENOTFOUND')) {
+            output.logError(`Webhook connection failed: ${err.message}`, { url: webhookUrl });
+            output.warn(
+                `⚠️  Webhook connection failed: Unable to reach ${new URL(webhookUrl).hostname}`
+            );
+        } else {
+            output.logError(`Failed to send webhook: ${err.message}`, { url: webhookUrl });
+            output.warn(`⚠️  Failed to send webhook: ${err.message}`);
+        }
     }
 }

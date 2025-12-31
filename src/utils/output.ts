@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { SEPARATOR_LENGTH } from '../constants.js';
 import type { Stats, LogEntry } from '../types.js';
 import { rotateFileIfNeeded } from './file-rotation.js';
 
@@ -131,7 +132,7 @@ export class Output {
     }
 
     /** Print a separator line */
-    separator(char: string = '=', length: number = 60): void {
+    separator(char: string = '=', length: number = SEPARATOR_LENGTH): void {
         if (!this.options.quiet && !this.options.json) {
             console.log(char.repeat(length));
         }
@@ -140,9 +141,9 @@ export class Output {
     /** Print a header with separators */
     header(title: string): void {
         if (!this.options.quiet && !this.options.json) {
-            console.log('='.repeat(60));
+            console.log('='.repeat(SEPARATOR_LENGTH));
             console.log(title);
-            console.log('='.repeat(60));
+            console.log('='.repeat(SEPARATOR_LENGTH));
         }
     }
 

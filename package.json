@@ -11,9 +11,10 @@
         "dev": "bun --watch src/cli.ts",
         "test": "bun test",
         "test:watch": "bun test --watch",
+        "test:coverage": "bun test --coverage",
         "type-check": "tsc --noEmit",
-        "lint": "eslint src/**/*.ts --ignore-pattern 'src/__tests__/**' --no-warn-ignored",
-        "lint:fix": "eslint src/**/*.ts --ignore-pattern 'src/__tests__/**' --no-warn-ignored --fix",
+        "lint": "eslint src/**/*.ts --no-warn-ignored",
+        "lint:fix": "eslint src/**/*.ts --no-warn-ignored --fix",
         "format": "prettier --write src/**/*.ts",
         "format:check": "prettier --check src/**/*.ts",
         "prepublishOnly": "bun run type-check && bun run lint && bun test"
@@ -43,7 +44,8 @@
         "url": "https://github.com/FaZeTitans/fscopy/issues"
     },
     "engines": {
-        "node": ">=18.0.0"
+        "node": ">=18.0.0",
+        "bun": ">=1.0.0"
     },
     "files": [
         "src/**/*.ts",

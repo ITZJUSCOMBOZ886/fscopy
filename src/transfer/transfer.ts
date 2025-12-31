@@ -186,6 +186,9 @@ function checkDocumentSize(
     );
 }
 
+// Track which collections have already shown the max-depth warning (to avoid spam)
+const maxDepthWarningsShown = new Set<string>();
+
 async function processSubcollections(
     ctx: TransferContext,
     doc: QueryDocumentSnapshot,
@@ -196,6 +199,15 @@ async function processSubcollections(
 
     // Check max depth limit (0 = unlimited)
     if (config.maxDepth > 0 && depth >= config.maxDepth) {
+        // Show console warning only once per root collection
+        const rootCollection = collectionPath.split('/')[0];
+        if (!maxDepthWarningsShown.has(rootCollection)) {
+            maxDepthWarningsShown.add(rootCollection);
+            output.warn(
+                `⚠️  Subcollections in ${rootCollection} beyond depth ${config.maxDepth} will be skipped`
+            );
+        }
+
         output.logInfo(`Skipping subcollections at depth ${depth} (max: ${config.maxDepth})`, {
             collection: collectionPath,
             docId: doc.id,

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { STATE_SAVE_INTERVAL_MS, STATE_SAVE_BATCH_INTERVAL } from '../constants.js';
 import type { Config, ValidatedConfig, TransferState, Stats } from '../types.js';
 
 export const STATE_VERSION = 1;
@@ -81,14 +82,11 @@ export class CompletedDocsCache {
 // =============================================================================
 
 export interface StateSaverOptions {
-    /** Save every N batches (default: 10) */
+    /** Save every N batches (default: STATE_SAVE_BATCH_INTERVAL) */
     batchInterval?: number;
-    /** Save every N milliseconds (default: 5000) */
+    /** Save every N milliseconds (default: STATE_SAVE_INTERVAL_MS) */
     timeInterval?: number;
 }
-
-const DEFAULT_BATCH_INTERVAL = 10;
-const DEFAULT_TIME_INTERVAL = 5000;
 
 /**
  * Throttled state saver with O(1) completed doc lookups.
@@ -108,8 +106,8 @@ export class StateSaver {
         private readonly state: TransferState,
         options: StateSaverOptions = {}
     ) {
-        this.batchInterval = options.batchInterval ?? DEFAULT_BATCH_INTERVAL;
-        this.timeInterval = options.timeInterval ?? DEFAULT_TIME_INTERVAL;
+        this.batchInterval = options.batchInterval ?? STATE_SAVE_BATCH_INTERVAL;
+        this.timeInterval = options.timeInterval ?? STATE_SAVE_INTERVAL_MS;
         this.cache = new CompletedDocsCache(state.completedDocs);
     }
 

